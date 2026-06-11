@@ -305,6 +305,14 @@ body {
 .step-num { width: 20px; height: 20px; min-width: 20px; border-radius: 50%; background: var(--bg4); display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: var(--text3); margin-top: 1px; }
 .step-text { font-size: 13px; color: var(--text2); line-height: 1.5; }
 
+/* ---- TOGGLE ---- */
+.toggle { position:relative; display:inline-block; width:44px; height:24px; flex-shrink:0; }
+.toggle input { opacity:0; width:0; height:0; }
+.toggle-slider { position:absolute; cursor:pointer; inset:0; background:var(--bg4); border-radius:99px; transition:background 0.2s; }
+.toggle-slider:before { content:''; position:absolute; width:18px; height:18px; left:3px; bottom:3px; background:white; border-radius:50%; transition:transform 0.2s; }
+.toggle input:checked + .toggle-slider { background:var(--accent); }
+.toggle input:checked + .toggle-slider:before { transform:translateX(20px); }
+
 /* ---- FAB (floating action button) ---- */
 .fab {
   position: fixed; right: 20px; bottom: calc(var(--tab-h) + var(--safe-bottom) + 16px);
@@ -1025,6 +1033,11 @@ function weekStart() {
   const day = d.getDay(); const diff = day === 0 ? 6 : day - 1;
   d.setDate(d.getDate() - diff); return d;
 }
+
+// ---- Workday helpers ----
+function getActiveDays() { return state.settings.activeDays || [0,1,2,3,4]; }
+function isActiveDay(i)  { return getActiveDays().includes(i); }
+function activeTarget()  { return (state.settings.hourLimit||8) * getActiveDays().length; }
 function allTasks() {
   return state.buckets.flatMap(b =>
     (b.subBuckets||[]).flatMap(sb =>
@@ -1608,8 +1621,14 @@ function renderReviewWeek(limit) {
   const DAY_NAMES = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
   const today = new Date().toDateString();
   const wkSess = state.sessions.filter(s=>new Date(s.start)>=ws);
-  const totalH = wkSess.reduce((sum,s)=>sum+s.duration/3600,0);
-  const weekScore = Math.min(100,Math.round(totalH/(limit*5)*100));
+  let activeH = 0, bonusH = 0;
+  DAY_NAMES.forEach((_,i) => {
+    const date = new Date(ws); date.setDate(ws.getDate()+i);
+    const h = dayH(date);
+    if (isActiveDay(i)) activeH += h; else bonusH += h;
+  });
+  const target = activeTarget();
+  const weekScore = Math.min(100,Math.round(activeH/target*100));
   const weekCol = weekScore>=70?'var(--green)':weekScore>=40?'var(--amber)':'var(--red)';
   document.getElementById('review-sub').textContent = 'This week';
 
@@ -1625,18 +1644,19 @@ function renderReviewWeek(limit) {
     const h=dayHours[i];
     const date=new Date(ws);date.setDate(ws.getDate()+i);
     const isTd=date.toDateString()===today;
+    const active=isActiveDay(i);
     const px=Math.max(4,Math.round((h/maxH)*CHART_H));
-    const col=h>=limit?'var(--green)':h>=limit*0.5?'var(--accent)':'var(--bg4)';
-    const borderCol=h>=limit?'rgba(34,197,94,0.4)':h>=limit*0.5?'rgba(108,99,255,0.4)':'transparent';
-    return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:4px;height:${CHART_H+28}px;">
-      <div style="font-size:10px;color:var(--text3);font-family:'DM Mono',monospace;height:14px;line-height:14px;">${h>0?h.toFixed(1):''}</div>
+    const col=!active?'var(--accent)':h>=limit?'var(--green)':h>=limit*0.5?'var(--accent)':'var(--bg4)';
+    const borderCol=!active?'rgba(108,99,255,0.3)':h>=limit?'rgba(34,197,94,0.4)':h>=limit*0.5?'rgba(108,99,255,0.4)':'transparent';
+    return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:4px;height:${CHART_H+28}px;${!active?'opacity:0.7;':''}">
+      <div style="font-size:10px;color:var(--text3);font-family:'DM Mono',monospace;height:14px;line-height:14px;">${h>0?(active?h.toFixed(1):'⚡'+h.toFixed(1)):''}</div>
       <div style="width:100%;height:${px}px;background:${col};border-radius:5px 5px 0 0;border:1px solid ${borderCol};border-bottom:none;${isTd?'outline:2px solid var(--accent2);outline-offset:2px;':''}"></div>
-      <div style="font-size:11px;color:${isTd?'var(--accent2)':'var(--text3)'};font-weight:${isTd?'700':'400'};height:15px;line-height:15px;">${d}</div>
+      <div style="font-size:11px;color:${isTd?'var(--accent2)':active?'var(--text3)':'var(--accent2)'};font-weight:${isTd?'700':'400'};height:15px;line-height:15px;">${d}</div>
     </div>`;
   }).join('');
 
   const bucketRows = state.buckets.map(b=>{
-    const planned=(b.weight/100)*limit*5;
+    const planned=(b.weight/100)*target;
     const bTasks=(b.subBuckets||[]).flatMap(sb=>sb.tasks||[]).map(t=>t.id);
     const actual=wkSess.filter(s=>bTasks.includes(s.taskId)).reduce((sum,s)=>sum+s.duration/3600,0);
     const pct=planned>0?Math.min(100,(actual/planned)*100):0;
@@ -1658,13 +1678,17 @@ function renderReviewWeek(limit) {
   document.getElementById('review-content').innerHTML = `
     <div class="card card-sm" style="border-left:3px solid ${weekCol};margin-bottom:12px;">
       <div class="row" style="margin-bottom:8px;">
-        <div><div style="font-size:13px;font-weight:600;">Week score</div><div style="font-size:11px;color:var(--text3);">${fmtH(totalH)} of ${limit*5}h · ${wkSess.length} sessions</div></div>
+        <div>
+          <div style="font-size:13px;font-weight:600;">Week score</div>
+          <div style="font-size:11px;color:var(--text3);">${activeH.toFixed(1)}h of ${target}h · ${getActiveDays().length} active days${bonusH>0?` · +${bonusH.toFixed(1)}h ⚡`:''}</div>
+        </div>
         <div style="font-size:28px;font-weight:700;font-family:'DM Mono',monospace;color:${weekCol};">${weekScore}%</div>
       </div>
       <div class="prog-track" style="height:8px;"><div class="prog-fill" style="width:${weekScore}%;background:${weekCol};"></div></div>
+      ${bonusH>0?`<div style="margin-top:6px;height:4px;background:var(--bg4);border-radius:99px;overflow:hidden;"><div style="width:${Math.min(100,bonusH/limit*100).toFixed(0)}%;height:100%;background:var(--accent2);border-radius:99px;opacity:0.5;"></div></div><div style="font-size:10px;color:var(--text3);margin-top:3px;">⚡ bonus hours (flex/rest days — don't affect score)</div>`:''}
     </div>
     <div class="stat-grid">
-      <div class="stat-card"><div class="stat-label">Hours</div><div class="stat-value">${totalH.toFixed(1)}<span style="font-size:14px;color:var(--text3);">h</span></div><div class="stat-sub">of ${limit*5}h</div></div>
+      <div class="stat-card"><div class="stat-label">Hours</div><div class="stat-value">${activeH.toFixed(1)}<span style="font-size:14px;color:var(--text3);">h</span></div><div class="stat-sub">of ${target}h${bonusH>0?` +${bonusH.toFixed(1)}⚡`:''}</div></div>
       <div class="stat-card"><div class="stat-label">Important</div><div class="stat-value" style="color:${importantDone===importantTotal&&importantTotal>0?'var(--green)':'var(--text)'};">${importantDone}<span style="font-size:14px;color:var(--text3);">/${importantTotal}</span></div><div class="stat-sub">done</div></div>
     </div>
     <div class="section-label">Daily output</div>
@@ -1796,7 +1820,7 @@ async function getAIReview() {
   const breakdown = state.buckets.map(b=>{
     const bTasks=(b.subBuckets||[]).flatMap(sb=>sb.tasks||[]).map(t=>t.id);
     const actual=wkSess.filter(s=>bTasks.includes(s.taskId)).reduce((sum,s)=>sum+s.duration/3600,0);
-    const planned=(b.weight/100)*limit*5;
+    const planned=(b.weight/100)*target;
     return `${b.name}: ${actual.toFixed(1)}h actual vs ${planned.toFixed(1)}h planned`;
   }).join('; ');
   const importantDone=tasks.filter(t=>t.priority==='important'&&wkSess.filter(s=>s.taskId===t.id).reduce((sum,s)=>sum+s.duration/3600,0)>=t.hours*0.9).length;
@@ -1938,6 +1962,34 @@ let _editingTaskBucketId = null;
 let _editingTaskSbId = null;
 let _selectedColor = COLORS[0];
 
+function renderMobileWorkdayToggles() {
+  const el = document.getElementById('mob-workday-toggles');
+  if (!el) return;
+  const labels = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+  const descs  = ['Core','Core','Core','Core','Core','Flex ⚡ bonus','Rest ⚡ bonus'];
+  const active = getActiveDays();
+  el.innerHTML = labels.map((d,i) => `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--border);">
+      <div>
+        <div style="font-size:13px;font-weight:500;">${d}</div>
+        <div style="font-size:11px;color:var(--text3);">${descs[i]}</div>
+      </div>
+      <label class="toggle" style="flex-shrink:0;">
+        <input type="checkbox" id="mob-wd-${i}" ${active.includes(i)?'checked':''}>
+        <span class="toggle-slider"></span>
+      </label>
+    </div>`).join('');
+}
+
+function saveMobileWorkSchedule() {
+  const active = [];
+  for (let i=0; i<7; i++) { if (document.getElementById(`mob-wd-${i}`)?.checked) active.push(i); }
+  if (!active.length) { showToast('Select at least one active day', 'var(--red)'); return; }
+  state.settings.activeDays = active;
+  save();
+  showToast('Schedule saved ✓', 'var(--green)');
+}
+
 function switchSetupTab(tab) {
   setupTab=tab;
   ['buckets','settings'].forEach(t=>document.getElementById('stab-'+t).classList.toggle('active',t===tab));
@@ -2064,6 +2116,12 @@ function renderSetupSettings() {
     </div>
     <button class="btn btn-primary btn-full" onclick="saveSettings()" style="margin-bottom:12px;">Save settings</button>
     <div class="card" style="margin-bottom:12px;">
+      <div style="font-size:13px;font-weight:700;margin-bottom:4px;">Work Schedule</div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:14px;">Active days count toward your weekly score. Flex/rest days are bonus — they can only help, never hurt.</div>
+      <div id="mob-workday-toggles" style="margin-bottom:14px;"></div>
+      <button class="btn btn-primary btn-full btn-sm" onclick="saveMobileWorkSchedule()">Save schedule</button>
+    </div>
+    <div class="card" style="margin-bottom:12px;">
       <div style="font-size:13px;font-weight:700;margin-bottom:4px;">GitHub Sync</div>
       <div style="font-size:12px;color:var(--text3);margin-bottom:14px;">Saves your data to a private GitHub repo so it stays in sync across devices.</div>
       ${ghEnabled() ? `
@@ -2116,6 +2174,7 @@ function renderSetupSettings() {
       save();
     });
   }
+  renderMobileWorkdayToggles();
 }
 
 function saveSettings() {
