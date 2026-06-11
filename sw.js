@@ -1,4 +1,8 @@
-const CACHE = 'focusflow-v1';
+// ─── INCREMENT THIS NUMBER every time you upload a new version ───
+const VERSION = 2;
+// ─────────────────────────────────────────────────────────────────
+
+const CACHE = `focusflow-v${VERSION}`;
 const ASSETS = [
   './focusflow_mobile.html',
   './manifest.json',
