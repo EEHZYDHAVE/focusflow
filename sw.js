@@ -1,5 +1,5 @@
 // ─── INCREMENT THIS NUMBER every time you upload a new version ───
-const VERSION = 6;
+const VERSION = 7;
 // ─────────────────────────────────────────────────────────────────
 
 const CACHE = `focusflow-v${VERSION}`;
@@ -11,41 +11,46 @@ const ASSETS = [
   'https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap'
 ];
 
-// Install — cache all assets
+// Install — cache all assets, activate immediately
 self.addEventListener('install', e => {
   e.waitUntil(
     caches.open(CACHE).then(cache => {
-      // Cache core assets; font may fail offline, that's okay
       return Promise.allSettled(ASSETS.map(url => cache.add(url)));
-    }).then(() => self.skipWaiting())
+    }).then(() => self.skipWaiting())  // take over immediately
   );
 });
 
-// Activate — remove old caches
+// Activate — remove old caches, claim all clients immediately
 self.addEventListener('activate', e => {
   e.waitUntil(
     caches.keys().then(keys =>
       Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
-    ).then(() => self.clients.claim())
+    ).then(() => {
+      self.skipWaiting();          // force takeover even if old SW is running
+      return self.clients.claim(); // control all open tabs immediately
+    })
   );
 });
 
-// Fetch — cache-first for local assets, network-first for everything else
+// Fetch strategy
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
 
-  // Always go network-first for the Anthropic API (AI review calls)
-  if (url.hostname === 'api.anthropic.com') {
+  // Always network-first for external APIs — never cache these
+  if (
+    url.hostname === 'api.anthropic.com' ||
+    url.hostname === 'api.github.com' ||
+    url.hostname === 'generativelanguage.googleapis.com'
+  ) {
     e.respondWith(fetch(e.request));
     return;
   }
 
-  // Cache-first for everything else
+  // Cache-first for local app assets
   e.respondWith(
     caches.match(e.request).then(cached => {
       if (cached) return cached;
       return fetch(e.request).then(response => {
-        // Cache successful GET responses
         if (e.request.method === 'GET' && response.status === 200) {
           const clone = response.clone();
           caches.open(CACHE).then(cache => cache.put(e.request, clone));
