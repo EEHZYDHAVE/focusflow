@@ -15,7 +15,8 @@
 <!-- Service worker registration -->
 <script>
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js');
+    navigator.serviceWorker.register('/focusflow/sw.js', { scope: '/focusflow/' })
+      .catch(err => console.error('SW registration failed:', err));
   }
 </script>
 <style>
