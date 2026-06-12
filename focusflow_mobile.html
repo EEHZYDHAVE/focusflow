@@ -1068,10 +1068,14 @@ function taskTrackedH(taskId) {
     .reduce((sum,s) => sum + s.duration/3600, 0);
 }
 function taskWeekH(taskId) {
-  // This week only — used for completion/strikethrough state
+  // This week only — kept for review/stats
   const ws = weekStart();
   return state.sessions.filter(s => s.taskId === taskId && new Date(s.start) >= ws)
     .reduce((sum,s) => sum + s.duration/3600, 0);
+}
+function taskDoneToday(taskId, plannedHours) {
+  // Completion = today's hours >= 90% of planned. Resets every day.
+  return taskTodayH(taskId) >= plannedHours * 0.9;
 }
 function taskTodayH(taskId) {
   // Today only — used for tracker display and progress bars
@@ -1307,17 +1311,17 @@ function stopSession(fromLimit = false) {
   state.activeSession = null;
   save();
   if (!fromLimit) soundStop();
-  // Check task completion — based on this week's hours
+  // Check task completion — based on today's hours only (resets daily)
   const task = allTasks().find(t => t.id === taskId);
   if (task) {
-    const ws = weekStart();
-    const prev = state.sessions.filter(s=>s.taskId===taskId && new Date(s.start)>=ws).slice(0,-1).reduce((sum,s)=>sum+s.duration/3600,0);
-    const now  = taskWeekH(taskId);
-    if (now >= task.hours*0.9 && prev < task.hours*0.9) {
+    const today = new Date().toDateString();
+    const prevToday = state.sessions.filter(s=>s.taskId===taskId && new Date(s.start).toDateString()===today).slice(0,-1).reduce((sum,s)=>sum+s.duration/3600,0);
+    const nowToday  = taskTodayH(taskId);
+    if (nowToday >= task.hours*0.9 && prevToday < task.hours*0.9) {
       setTimeout(() => {
         soundComplete();
         notifTaskComplete(task.name);
-        showToast(`✓ "${task.name}" complete!`, 'var(--green)', 5000);
+        showToast(`✓ "${task.name}" done for today!`, 'var(--green)', 5000);
       }, fromLimit?600:300);
     }
   }
@@ -1353,7 +1357,7 @@ function renderToday() {
   // Stats
   const tasks = allTasks();
   const todaySess = state.sessions.filter(s => new Date(s.start).toDateString() === now.toDateString());
-  const importantDone = tasks.filter(t=>t.priority==='important'&&taskWeekH(t.id)>=t.hours*0.9).length;
+  const importantDone = tasks.filter(t=>t.priority==='important'&&taskDoneToday(t.id,t.hours)).length;
   const importantTotal = tasks.filter(t=>t.priority==='important').length;
   document.getElementById('today-stats').innerHTML = `
     <div class="stat-card">
@@ -1415,7 +1419,7 @@ function renderToday() {
 
   // Up next — important/urgent tasks not done
   const tEl = document.getElementById('today-tasks');
-  const upNext = tasks.filter(t => t.priority !== 'normal' && taskWeekH(t.id) < t.hours * 0.9).slice(0,5);
+  const upNext = tasks.filter(t => t.priority !== 'normal' && !taskDoneToday(t.id, t.hours)).slice(0,5);
   if (!upNext.length) {
     tEl.innerHTML = '<div style="font-size:13px;color:var(--text3);padding:8px 0;text-align:center;">All priority tasks on track 🎉</div>';
   } else {
@@ -1478,9 +1482,8 @@ function renderTrackTaskList() {
       <div class="card" style="padding:0 14px;margin-bottom:12px;">
         ${bTasks.map(t => {
           const tracked = taskTodayH(t.id);
-          const allTime = taskWeekH(t.id);
           const pct = Math.min(100,(tracked/t.hours)*100);
-          const done = allTime >= t.hours * 0.9;
+          const done = taskDoneToday(t.id, t.hours);
           return `<div class="task-item">
             <div class="task-dot" style="background:${PRIORITY_COLOR[t.priority]};"></div>
             <div class="task-info">
@@ -1648,7 +1651,7 @@ function renderReviewWeek(limit) {
   document.getElementById('review-sub').textContent = 'This week';
 
   const tasks = allTasks();
-  const importantDone = tasks.filter(t=>t.priority==='important'&&wkSess.filter(s=>s.taskId===t.id).reduce((sum,s)=>sum+s.duration/3600,0)>=t.hours*0.9).length;
+  const importantDoneWk = tasks.filter(t=>t.priority==='important'&&wkSess.filter(s=>s.taskId===t.id).reduce((sum,s)=>sum+s.duration/3600,0)>=t.hours*0.9).length;
   const importantTotal = tasks.filter(t=>t.priority==='important').length;
 
   // Bar chart — fixed CHART_H container, absolute px heights
@@ -1704,7 +1707,7 @@ function renderReviewWeek(limit) {
     </div>
     <div class="stat-grid">
       <div class="stat-card"><div class="stat-label">Hours</div><div class="stat-value">${activeH.toFixed(1)}<span style="font-size:14px;color:var(--text3);">h</span></div><div class="stat-sub">of ${target}h${bonusH>0?` +${bonusH.toFixed(1)}⚡`:''}</div></div>
-      <div class="stat-card"><div class="stat-label">Important</div><div class="stat-value" style="color:${importantDone===importantTotal&&importantTotal>0?'var(--green)':'var(--text)'};">${importantDone}<span style="font-size:14px;color:var(--text3);">/${importantTotal}</span></div><div class="stat-sub">done</div></div>
+      <div class="stat-card"><div class="stat-label">Important</div><div class="stat-value" style="color:${importantDoneWk===importantTotal&&importantTotal>0?'var(--green)':'var(--text)'};">${importantDoneWk}<span style="font-size:14px;color:var(--text3);">/${importantTotal}</span></div><div class="stat-sub">done this week</div></div>
     </div>
     <div class="section-label">Daily output</div>
     <div class="card"><div style="display:flex;align-items:flex-end;gap:6px;">${bars}</div>
