@@ -13,6 +13,12 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/focusflow/sw.js', { scope: '/focusflow/' })
+      .catch(err => console.error('SW registration failed:', err));
+  }
+</script>
 <style>
 :root {
   --bg: #0a0a0f;
