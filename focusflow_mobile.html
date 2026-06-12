@@ -1011,12 +1011,20 @@ async function forcePullGH() {
   setSyncStatus('syncing', 'Pulling...');
   const remote = await ghRead();
   if (!remote) { showToast('No data found on GitHub yet', 'var(--amber)'); setSyncStatus('idle'); return; }
-  if (remote.state) { state = { ...state, ...remote.state }; saveLocal(); }
+  if (remote.state) {
+    // Merge sessions: combine both sets, deduplicate by id
+    const localIds = new Set((state.sessions||[]).map(s=>s.id));
+    const remoteSessions = (remote.state.sessions||[]).filter(s=>!localIds.has(s.id));
+    state = { ...state, ...remote.state };
+    state.sessions = [...(remote.state.sessions||[]), ...(state.sessions||[]).filter(s=>!(remote.state.sessions||[]).find(r=>r.id===s.id))];
+    saveLocal();
+  }
   if (remote.cards) { cards = remote.cards; saveCardsLocal(); }
   setSyncStatus('ok', 'Pulled');
   setTimeout(() => setSyncStatus('idle'), 3000);
   showToast('Data pulled from GitHub ✓', 'var(--green)');
   renderToday();
+  renderTrack();
 }
 
 async function forcePushGH() {
@@ -2458,24 +2466,25 @@ async function init() {
     try {
       const remote = await ghRead();
       if (remote) {
-        // Merge: take whichever has more sessions (most up-to-date device wins)
-        const localSessions  = state.sessions?.length || 0;
-        const remoteSessions = remote.state?.sessions?.length || 0;
-        if (remoteSessions > localSessions) {
-          state = { ...state, ...remote.state };
-          if (remote.cards) cards = remote.cards;
-          saveLocal();
-          saveCardsLocal();
-          renderToday();
-          showToast('Synced from GitHub ✓', 'var(--green)', 3000);
-        } else if (localSessions > remoteSessions) {
-          // Local is ahead — push it
-          await ghWrite();
+        // Smart merge: combine sessions from both sides, deduplicate by id
+        const localSessions  = state.sessions || [];
+        const remoteSessions = remote.state?.sessions || [];
+        const localIds = new Set(localSessions.map(s=>s.id));
+        const merged = [...localSessions, ...remoteSessions.filter(s=>!localIds.has(s.id))];
+        // Take remote settings/buckets if remote has equal or more sessions
+        if (remoteSessions.length >= localSessions.length) {
+          state = { ...state, ...remote.state, sessions: merged };
+        } else {
+          state.sessions = merged;
         }
+        if (remote.cards) cards = remote.cards;
+        saveLocal(); saveCardsLocal();
+        renderToday();
+        // Push merged result back if local had extra sessions remote didn't
+        if (localSessions.length > remoteSessions.length) await ghWrite();
         setSyncStatus('ok', 'Synced');
         setTimeout(() => setSyncStatus('idle'), 3000);
       } else {
-        // No remote file yet — first time, push local data
         await ghWrite();
       }
     } catch(e) {
