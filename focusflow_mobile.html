@@ -1055,8 +1055,14 @@ function todayH() {
     .reduce((sum,s) => sum + s.duration/3600, 0);
 }
 function taskTrackedH(taskId) {
-  // All-time total — used for task completion detection
+  // All-time total — kept for AI prompts and history
   return state.sessions.filter(s => s.taskId === taskId)
+    .reduce((sum,s) => sum + s.duration/3600, 0);
+}
+function taskWeekH(taskId) {
+  // This week only — used for completion/strikethrough state
+  const ws = weekStart();
+  return state.sessions.filter(s => s.taskId === taskId && new Date(s.start) >= ws)
     .reduce((sum,s) => sum + s.duration/3600, 0);
 }
 function taskTodayH(taskId) {
@@ -1293,11 +1299,12 @@ function stopSession(fromLimit = false) {
   state.activeSession = null;
   save();
   if (!fromLimit) soundStop();
-  // Check task completion
+  // Check task completion — based on this week's hours
   const task = allTasks().find(t => t.id === taskId);
   if (task) {
-    const prev = state.sessions.filter(s=>s.taskId===taskId).slice(0,-1).reduce((sum,s)=>sum+s.duration/3600,0);
-    const now  = taskTrackedH(taskId);
+    const ws = weekStart();
+    const prev = state.sessions.filter(s=>s.taskId===taskId && new Date(s.start)>=ws).slice(0,-1).reduce((sum,s)=>sum+s.duration/3600,0);
+    const now  = taskWeekH(taskId);
     if (now >= task.hours*0.9 && prev < task.hours*0.9) {
       setTimeout(() => {
         soundComplete();
@@ -1338,7 +1345,7 @@ function renderToday() {
   // Stats
   const tasks = allTasks();
   const todaySess = state.sessions.filter(s => new Date(s.start).toDateString() === now.toDateString());
-  const importantDone = tasks.filter(t=>t.priority==='important'&&taskTrackedH(t.id)>=t.hours*0.9).length;
+  const importantDone = tasks.filter(t=>t.priority==='important'&&taskWeekH(t.id)>=t.hours*0.9).length;
   const importantTotal = tasks.filter(t=>t.priority==='important').length;
   document.getElementById('today-stats').innerHTML = `
     <div class="stat-card">
@@ -1400,7 +1407,7 @@ function renderToday() {
 
   // Up next — important/urgent tasks not done
   const tEl = document.getElementById('today-tasks');
-  const upNext = tasks.filter(t => t.priority !== 'normal' && taskTrackedH(t.id) < t.hours * 0.9).slice(0,5);
+  const upNext = tasks.filter(t => t.priority !== 'normal' && taskWeekH(t.id) < t.hours * 0.9).slice(0,5);
   if (!upNext.length) {
     tEl.innerHTML = '<div style="font-size:13px;color:var(--text3);padding:8px 0;text-align:center;">All priority tasks on track 🎉</div>';
   } else {
@@ -1463,7 +1470,7 @@ function renderTrackTaskList() {
       <div class="card" style="padding:0 14px;margin-bottom:12px;">
         ${bTasks.map(t => {
           const tracked = taskTodayH(t.id);
-          const allTime = taskTrackedH(t.id);
+          const allTime = taskWeekH(t.id);
           const pct = Math.min(100,(tracked/t.hours)*100);
           const done = allTime >= t.hours * 0.9;
           return `<div class="task-item">
