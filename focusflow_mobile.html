@@ -2178,6 +2178,9 @@ function renderSetupSettings() {
           Import data (JSON)
         </button>
         <input type="file" id="import-file" accept=".json" style="display:none;" onchange="importData(event)">
+        <button class="btn btn-full btn-sm" style="background:var(--red-bg);color:var(--red);border:1px solid rgba(239,68,68,0.2);" onclick="clearAllMobileData()">
+          Clear all data
+        </button>
       </div>
     </div>`;
 
@@ -2209,6 +2212,19 @@ function exportData() {
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='focusflow_export.json'; a.click();
 }
 
+function clearAllMobileData() {
+  if (!confirm('Clear ALL data? This removes all sessions, buckets and tasks from this device. This cannot be undone.\n\nMake sure you have exported a backup first.')) return;
+  localStorage.removeItem(STORAGE_KEY);
+  localStorage.removeItem(CARDS_KEY);
+  // Reset state to defaults
+  state = { buckets:[], sessions:[], weekSummaries:[], settings:{ ...state.settings }, activeSession:null };
+  cards = {};
+  saveLocal(); saveCardsLocal();
+  showToast('All data cleared ✓', 'var(--amber)');
+  renderSetup();
+  renderToday();
+}
+
 function importData(event) {
   const file = event.target.files[0];
   if (!file) return;
@@ -2216,22 +2232,33 @@ function importData(event) {
   reader.onload = e => {
     try {
       const parsed = JSON.parse(e.target.result);
-      if (parsed.state) {
-        state = { ...state, ...parsed.state };
-        save();
+      // Handle both desktop { state, cards } and direct state exports
+      const importedState = parsed.state || parsed;
+      const importedCards = parsed.cards || {};
+      if (importedState.buckets || importedState.sessions) {
+        state = {
+          ...state,
+          buckets:       importedState.buckets       || state.buckets,
+          sessions:      importedState.sessions      || state.sessions,
+          weekSummaries: importedState.weekSummaries || state.weekSummaries,
+          activeSession: null, // never import an active session
+        };
+        saveLocal();
       }
-      if (parsed.cards) {
-        cards = parsed.cards;
-        saveCards();
+      if (Object.keys(importedCards).length) {
+        cards = importedCards;
+        saveCardsLocal();
       }
       showToast('Data imported ✓', 'var(--green)');
+      renderToday();
+      renderTrack();
       renderSetup();
     } catch(err) {
       showToast('Import failed — invalid file', 'var(--red)');
     }
   };
   reader.readAsText(file);
-  event.target.value = ''; // reset so same file can be re-imported
+  event.target.value = '';
 }
 
 // Bucket CRUD
