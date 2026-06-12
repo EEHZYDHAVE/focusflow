@@ -1,10 +1,11 @@
 // ─── INCREMENT THIS NUMBER every time you upload a new version ───
-const VERSION = 9;
+const VERSION = 10;
 // ─────────────────────────────────────────────────────────────────
 
 const CACHE = `focusflow-v${VERSION}`;
 const ASSETS = [
   './focusflow_mobile.html',
+  './focusflow.html',    // new desktop version
   './manifest.json',
   './icon-192.png',
   './icon-512.png',
