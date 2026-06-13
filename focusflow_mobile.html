@@ -1126,12 +1126,6 @@ function toggleMobilePause() {
   }
   renderTimerFace(getMobileElapsed(), state.activeSession.limitSecs||0);
 }
-  const now = new Date();
-  const clockEl = document.getElementById('today-clock');
-  const dateEl  = document.getElementById('today-clock-date');
-  if (clockEl) clockEl.textContent = now.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-  if (dateEl)  dateEl.textContent  = now.toLocaleDateString('en-US', {weekday:'short', month:'short', day:'numeric'});
-}
 
 function tickClock() {
   const now = new Date();
