@@ -13,12 +13,6 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-<script>
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/focusflow/sw.js', { scope: '/focusflow/' })
-      .catch(err => console.error('SW registration failed:', err));
-  }
-</script>
 <style>
 :root {
   --bg: #0a0a0f;
@@ -1106,6 +1100,39 @@ function fmtSecs(s) {
 const PRIORITY_COLOR = { important:'var(--amber)', urgent:'var(--red)', normal:'var(--text3)' };
 const PRIORITY_LABEL = { important:'Important', urgent:'Urgent', normal:'Normal' };
 
+function getMobileElapsed() {
+  if (!state.activeSession) return 0;
+  const paused = state.activeSession.pausedElapsed || 0;
+  if (state.activeSession.isPaused) return paused;
+  return paused + Math.floor((Date.now() - state.activeSession.startTime) / 1000);
+}
+
+function toggleMobilePause() {
+  if (!state.activeSession) return;
+  if (state.activeSession.isPaused) {
+    state.activeSession.startTime = Date.now();
+    state.activeSession.isPaused = false;
+    if (!timerInterval) timerInterval = setInterval(tickTimer, 1000);
+    save();
+    tone(523,0,0.15); tone(659,0.15,0.18,0.22); // resume sound
+    sendNotif('▶ Resumed', `Back to "${allTasks().find(t=>t.id===state.activeSession?.taskId)?.name||''}"`, 'ff-resume');
+  } else {
+    state.activeSession.pausedElapsed = getMobileElapsed();
+    state.activeSession.isPaused = true;
+    clearInterval(timerInterval); timerInterval = null;
+    save();
+    tone(440,0,0.25,0.18); // pause sound
+    sendNotif('⏸ Paused', `"${allTasks().find(t=>t.id===state.activeSession?.taskId)?.name||''}" is paused`, 'ff-pause');
+  }
+  renderTimerFace(getMobileElapsed(), state.activeSession.limitSecs||0);
+}
+  const now = new Date();
+  const clockEl = document.getElementById('today-clock');
+  const dateEl  = document.getElementById('today-clock-date');
+  if (clockEl) clockEl.textContent = now.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+  if (dateEl)  dateEl.textContent  = now.toLocaleDateString('en-US', {weekday:'short', month:'short', day:'numeric'});
+}
+
 function tickClock() {
   const now = new Date();
   const clockEl = document.getElementById('today-clock');
@@ -1224,7 +1251,7 @@ async function confirmStart(withLimit) {
     notifBreak();
     showToast('☕ Back-to-back sessions. Consider a short break.', 'var(--accent2)', 7000);
   }
-  state.activeSession = { taskId, bucketId, sbId, startTime: Date.now(), limitSecs };
+  state.activeSession = { taskId, bucketId, sbId, startTime: Date.now(), limitSecs, pausedElapsed: 0, isPaused: false };
   resetWarn();
   save();
   soundStart();
@@ -1237,8 +1264,8 @@ async function confirmStart(withLimit) {
 }
 
 function tickTimer() {
-  if (!state.activeSession) { clearInterval(timerInterval); return; }
-  const elapsed = Math.floor((Date.now() - state.activeSession.startTime) / 1000);
+  if (!state.activeSession || state.activeSession.isPaused) { clearInterval(timerInterval); timerInterval = null; return; }
+  const elapsed = getMobileElapsed();
   const limit = state.activeSession.limitSecs;
   if (limit > 0 && elapsed >= limit) {
     soundAlarm();
@@ -1257,7 +1284,7 @@ function tickTimer() {
 }
 
 function renderTimerFace(elapsed, limit) {
-  const CIRC = 2 * Math.PI * 90; // r=90
+  const CIRC = 2 * Math.PI * 90;
   let progress = 0, ringColor = 'var(--accent)';
   if (limit > 0) {
     progress = Math.min(1, elapsed / limit);
@@ -1265,6 +1292,7 @@ function renderTimerFace(elapsed, limit) {
   }
   const task = allTasks().find(t => t.id === state.activeSession?.taskId);
   const dashOffset = CIRC * (1 - progress);
+  const isPaused = state.activeSession?.isPaused || false;
 
   document.getElementById('track-active-inner').innerHTML = `
     <div style="display:flex;flex-direction:column;align-items:center;padding:28px 24px 24px;gap:14px;text-align:center;">
@@ -1274,19 +1302,23 @@ function renderTimerFace(elapsed, limit) {
         <svg width="220" height="220" viewBox="0 0 220 220">
           <circle class="timer-ring-bg" cx="110" cy="110" r="90"/>
           <circle class="timer-ring-fill" cx="110" cy="110" r="90"
-            stroke="${ringColor}"
+            stroke="${isPaused ? 'var(--amber)' : ringColor}"
             stroke-dasharray="${CIRC.toFixed(1)}"
             stroke-dashoffset="${dashOffset.toFixed(1)}"/>
         </svg>
         <div class="timer-center">
-          <div class="timer-digits">${fmtSecs(elapsed)}</div>
+          <div class="timer-digits" style="color:${isPaused?'var(--amber)':'var(--accent2)'};">${fmtSecs(elapsed)}</div>
           ${limit > 0 ? `<div class="timer-limit-label">${fmtSecs(elapsed)} / ${fmtSecs(limit)}</div>` : ''}
+          ${isPaused ? `<div style="font-size:11px;color:var(--amber);font-weight:700;margin-top:4px;letter-spacing:1px;">PAUSED</div>` : ''}
         </div>
       </div>
-      <button class="stop-btn" onclick="stopSession(false)">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
-        Stop
-      </button>
+      <div style="display:flex;gap:12px;align-items:center;">
+        <button onclick="toggleMobilePause()" style="width:56px;height:56px;border-radius:50%;background:${isPaused?'rgba(34,197,94,0.15)':'var(--bg3)'};border:2px solid ${isPaused?'rgba(34,197,94,0.3)':'var(--border2)'};color:${isPaused?'var(--green)':'var(--text2)'};font-size:20px;display:flex;align-items:center;justify-content:center;transition:all 0.15s;" title="${isPaused?'Resume':'Pause'}">${isPaused?'▶':'⏸'}</button>
+        <button class="stop-btn" onclick="stopSession(false)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+          Stop
+        </button>
+      </div>
       <div style="width:100%;max-width:320px;">
         ${limit > 0 ? `
         <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text3);margin-bottom:6px;">
@@ -1294,14 +1326,14 @@ function renderTimerFace(elapsed, limit) {
           <span class="monospace">${fmtSecs(elapsed)} / ${fmtSecs(limit)}</span>
         </div>
         <div class="prog-track">
-          <div class="prog-fill" style="width:${Math.min(100,(elapsed/limit)*100).toFixed(1)}%;background:${ringColor};transition:width 0.5s;"></div>
+          <div class="prog-fill" style="width:${Math.min(100,(elapsed/limit)*100).toFixed(1)}%;background:${isPaused?'var(--amber)':ringColor};transition:width 0.5s;"></div>
         </div>` : task ? `
         <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text3);margin-bottom:6px;">
           <span>Today</span>
           <span class="monospace">${fmtH(taskTodayH(task.id) + elapsed/3600)} / ${fmtH(task.hours)}</span>
         </div>
         <div class="prog-track">
-          <div class="prog-fill" style="width:${Math.min(100,(taskTodayH(task.id)+elapsed/3600)/task.hours*100).toFixed(1)}%;background:${ringColor};"></div>
+          <div class="prog-fill" style="width:${Math.min(100,(taskTodayH(task.id)+elapsed/3600)/task.hours*100).toFixed(1)}%;background:${isPaused?'var(--amber)':ringColor};"></div>
         </div>` : ''}
       </div>
     </div>`;
@@ -1309,8 +1341,8 @@ function renderTimerFace(elapsed, limit) {
 
 function stopSession(fromLimit = false) {
   if (!state.activeSession) return;
-  clearInterval(timerInterval);
-  const duration = Math.floor((Date.now() - state.activeSession.startTime) / 1000);
+  clearInterval(timerInterval); timerInterval = null;
+  const duration = getMobileElapsed(); // only non-paused time
   const taskId = state.activeSession.taskId;
   state.sessions.push({ id:uid(), taskId, bucketId:state.activeSession.bucketId, sbId:state.activeSession.sbId, start:state.activeSession.startTime, duration });
   _lastEnd = Date.now();
