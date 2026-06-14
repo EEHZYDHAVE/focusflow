@@ -1041,6 +1041,11 @@ function weekStart() {
   const day = d.getDay(); const diff = day === 0 ? 6 : day - 1;
   d.setDate(d.getDate() - diff); return d;
 }
+function weekStartFor(date) {
+  const d = new Date(date); d.setHours(0,0,0,0);
+  const day = d.getDay(); const diff = day === 0 ? 6 : day - 1;
+  d.setDate(d.getDate() - diff); return d;
+}
 
 // ---- Workday helpers ----
 function getActiveDays() { return state.settings.activeDays || [0,1,2,3,4]; }
@@ -1367,8 +1372,12 @@ function renderToday() {
   const limit = state.settings.hourLimit || 8;
   const h = todayH();
   const score = Math.min(100, Math.round(h / limit * 100));
-  const scoreColor = score >= 70 ? 'var(--green)' : score >= 30 ? 'var(--amber)' : 'var(--red)';
   const now = new Date();
+  const todayIdx = now.getDay()===0?6:now.getDay()-1; // 0=Mon..6=Sun
+  const active = isActiveDay(todayIdx);
+  const scoreColor = !active ? 'var(--accent2)' : score >= 70 ? 'var(--green)' : score >= 30 ? 'var(--amber)' : 'var(--red)';
+  const dayKind = todayIdx===5?'flex':todayIdx===6?'rest':null;
+  const bonusIcon = dayKind==='flex'?'⚡':'✦';
   const greetings = ['Good night','Good morning','Good morning','Good afternoon','Good afternoon','Good evening','Good evening'];
   document.getElementById('today-greeting').textContent = greetings[Math.floor(now.getHours()/4)] || 'Hello';
   document.getElementById('today-date').textContent = now.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
@@ -1377,13 +1386,13 @@ function renderToday() {
   document.getElementById('today-score-card').innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
       <div>
-        <div style="font-size:13px;font-weight:600;">Today's score</div>
-        <div style="font-size:11px;color:var(--text3);margin-top:2px;">${fmtH(h)} of ${limit}h target</div>
+        <div style="font-size:13px;font-weight:600;">${active?"Today's score":`${bonusIcon} ${dayKind==='flex'?'Flex':'Rest'} day`}</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px;">${active?`${fmtH(h)} of ${limit}h target`:`${fmtH(h)} tracked — bonus, not required`}</div>
       </div>
-      <div style="font-size:32px;font-weight:700;font-family:'DM Mono',monospace;color:${scoreColor};">${score}%</div>
+      <div style="font-size:32px;font-weight:700;font-family:'DM Mono',monospace;color:${scoreColor};">${active?score+'%':fmtH(h)+' '+bonusIcon}</div>
     </div>
     <div class="prog-track" style="height:8px;">
-      <div class="prog-fill" style="width:${score}%;background:${scoreColor};"></div>
+      <div class="prog-fill" style="width:${score}%;background:${scoreColor};${!active?'opacity:0.6;':''}"></div>
     </div>`;
 
   // Stats
@@ -1585,7 +1594,11 @@ function renderReviewDay(limit) {
   const daySess = state.sessions.filter(s=>new Date(s.start).toDateString()===d.toDateString());
   const h = daySess.reduce((sum,s)=>sum+s.duration/3600,0);
   const score = Math.min(100,Math.round(h/limit*100));
-  const col = score>=70?'var(--green)':score>=30?'var(--amber)':'var(--red)';
+  const dIdx = d.getDay()===0?6:d.getDay()-1; // 0=Mon..6=Sun
+  const active = isActiveDay(dIdx);
+  const col = !active?'var(--accent2)':score>=70?'var(--green)':score>=30?'var(--amber)':'var(--red)';
+  const dayKind = dIdx===5?'flex':dIdx===6?'rest':null;
+  const bonusIcon = dayKind==='flex'?'⚡':'✦';
 
   // Day pills: always Mon–Sun for current week, highlight active day
   const ws = weekStart();
@@ -1653,12 +1666,12 @@ function renderReviewDay(limit) {
     <div class="card card-sm" style="border-left:3px solid ${col};margin-bottom:12px;">
       <div class="row" style="margin-bottom:8px;">
         <div>
-          <div style="font-size:13px;font-weight:600;">Day score</div>
-          <div style="font-size:11px;color:var(--text3);">${fmtH(h)} of ${limit}h${reviewDayOff===0?' · counting':''}</div>
+          <div style="font-size:13px;font-weight:600;">${active?'Day score':`${bonusIcon} Bonus day`}</div>
+          <div style="font-size:11px;color:var(--text3);">${active?`${fmtH(h)} of ${limit}h`:`${fmtH(h)} tracked — bonus`}${reviewDayOff===0?' · counting':''}</div>
         </div>
-        <div style="font-size:28px;font-weight:700;font-family:'DM Mono',monospace;color:${col};">${score}%</div>
+        <div style="font-size:28px;font-weight:700;font-family:'DM Mono',monospace;color:${col};">${active?score+'%':fmtH(h)+' '+bonusIcon}</div>
       </div>
-      <div class="prog-track" style="height:8px;"><div class="prog-fill" style="width:${score}%;background:${col};"></div></div>
+      <div class="prog-track" style="height:8px;"><div class="prog-fill" style="width:${score}%;background:${col};${!active?'opacity:0.6;':''}"></div></div>
     </div>
     <div class="section-label">Bucket breakdown</div>
     <div class="card">${bucketRows||'<div style="font-size:13px;color:var(--text3);">No buckets set up.</div>'}</div>
@@ -1735,7 +1748,12 @@ function renderReviewWeek(limit) {
         <div style="font-size:28px;font-weight:700;font-family:'DM Mono',monospace;color:${weekCol};">${weekScore}%</div>
       </div>
       <div class="prog-track" style="height:8px;"><div class="prog-fill" style="width:${weekScore}%;background:${weekCol};"></div></div>
-      ${bonusH>0?`<div style="margin-top:6px;height:4px;background:var(--bg4);border-radius:99px;overflow:hidden;"><div style="width:${Math.min(100,bonusH/limit*100).toFixed(0)}%;height:100%;background:var(--accent2);border-radius:99px;opacity:0.5;"></div></div><div style="font-size:10px;color:var(--text3);margin-top:3px;">⚡ bonus hours (flex/rest days — don't affect score)</div>`:''}
+      ${bonusH>0?(()=>{
+        const flexRestCount = 7 - getActiveDays().length;
+        const bonusMax = flexRestCount * limit;
+        const bonusPct = bonusMax > 0 ? Math.min(100, bonusH/bonusMax*100) : 0;
+        return `<div style="margin-top:6px;height:4px;background:var(--bg4);border-radius:99px;overflow:hidden;"><div style="width:${bonusPct.toFixed(0)}%;height:100%;background:var(--accent2);border-radius:99px;opacity:0.5;"></div></div><div style="font-size:10px;color:var(--text3);margin-top:3px;">⚡ ${bonusH.toFixed(1)}h of ${bonusMax}h possible bonus (${flexRestCount} flex/rest day${flexRestCount!==1?'s':''})</div>`;
+      })():''}
     </div>
     <div class="stat-grid">
       <div class="stat-card"><div class="stat-label">Hours</div><div class="stat-value">${activeH.toFixed(1)}<span style="font-size:14px;color:var(--text3);">h</span></div><div class="stat-sub">of ${target}h${bonusH>0?` +${bonusH.toFixed(1)}⚡`:''}</div></div>
@@ -1752,7 +1770,7 @@ function renderReviewWeek(limit) {
     <div class="section-label">Planned vs actual</div>
     <div class="card">${bucketRows||'<div style="font-size:13px;color:var(--text3);">No buckets set up.</div>'}</div>
     <div style="margin-top:16px;">
-      <button class="btn btn-ghost btn-full" onclick="archiveWeek()">Archive this week</button>
+      <button class="btn btn-ghost btn-full" onclick="archiveWeek()">Archive past weeks</button>
     </div>`;
 }
 
@@ -1836,16 +1854,69 @@ function deleteSession(sessionId) {
   renderToday();
 }
 
+function buildWeekSummary(weekStartDate, sessions) {
+  const totalHours = sessions.reduce((sum,s)=>sum+s.duration/3600,0);
+  const bucketBreakdown = state.buckets.map(b => {
+    const bTasks = (b.subBuckets||[]).flatMap(sb=>sb.tasks||[]).map(t=>t.id);
+    const h = sessions.filter(s=>bTasks.includes(s.taskId)).reduce((sum,s)=>sum+s.duration/3600,0);
+    return { name: b.name, color: b.color, weight: b.weight, hours: h };
+  });
+  return {
+    week: weekStartDate.toISOString(),
+    totalHours,
+    sessions: sessions.length,
+    buckets: bucketBreakdown,
+    hourLimit: state.settings.hourLimit || 8,
+    activeDays: getActiveDays(),
+  };
+}
+
 function archiveWeek() {
-  if (!confirm('Archive this week?')) return;
-  const ws = weekStart();
-  const wkSess = state.sessions.filter(s=>new Date(s.start)>=ws);
-  const totalHours = wkSess.reduce((sum,s)=>sum+s.duration/3600,0);
-  if (!state.weekSummaries) state.weekSummaries=[];
-  state.weekSummaries.push({ week:ws.toISOString(), totalHours, sessions:wkSess.length });
-  state.sessions = state.sessions.filter(s=>new Date(s.start)<ws);
+  const ws = weekStart(); // current week's Monday — stays live
+  const pastSessions = state.sessions.filter(s => new Date(s.start) < ws);
+
+  if (!pastSessions.length) {
+    showToast('Nothing to archive — all sessions are in the current week', 'var(--amber)');
+    return;
+  }
+
+  // Group past sessions by the Monday of the week they belong to
+  const groups = {};
+  pastSessions.forEach(s => {
+    const key = weekStartFor(new Date(s.start)).toISOString();
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(s);
+  });
+
+  const alreadyArchived = new Set((state.weekSummaries||[]).map(w => w.week));
+  const weekKeys = Object.keys(groups).filter(k => !alreadyArchived.has(k)).sort();
+
+  if (!weekKeys.length) {
+    // Already archived — just clean leftover sessions
+    state.sessions = state.sessions.filter(s => new Date(s.start) >= ws);
+    save(); renderReview();
+    showToast('Cleaned up old sessions', 'var(--green)');
+    return;
+  }
+
+  const previewLines = weekKeys.map(k => {
+    const d = new Date(k);
+    const end = new Date(d); end.setDate(d.getDate()+6);
+    const totalH = groups[k].reduce((sum,s)=>sum+s.duration/3600,0);
+    const label = d.toLocaleDateString('en-US',{month:'short',day:'numeric'}) + '–' + end.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+    return `${label}: ${totalH.toFixed(1)}h`;
+  }).join('\n');
+
+  if (!confirm(`Archive ${weekKeys.length} past week(s)?\n\n${previewLines}\n\nThis week's data stays untouched.`)) return;
+
+  if (!state.weekSummaries) state.weekSummaries = [];
+  weekKeys.forEach(key => {
+    state.weekSummaries.push(buildWeekSummary(new Date(key), groups[key]));
+  });
+
+  state.sessions = state.sessions.filter(s => new Date(s.start) >= ws);
   save(); renderReview();
-  showToast('Week archived ✓','var(--green)');
+  showToast(`${weekKeys.length} week${weekKeys.length>1?'s':''} archived ✓`, 'var(--green)');
 }
 
 async function getAIReview() {
