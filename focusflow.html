@@ -18,7 +18,6 @@
     navigator.serviceWorker.register('/focusflow/sw.js', { scope: '/focusflow/' })
       .catch(err => console.error('SW registration failed:', err));
   }
-</script>
 <style>
 :root {
   --bg: #0a0a0f;
@@ -672,6 +671,9 @@ nav { padding: 16px 12px; flex: 1; }
       </div>
     </div>
     <div class="content">
+      <!-- Flex/rest day banner -->
+      <div id="dash-day-banner"></div>
+
       <!-- Hours / Mode row -->
       <div id="dash-hours-row" style="margin-bottom:20px;"></div>
 
@@ -845,7 +847,7 @@ nav { padding: 16px 12px; flex: 1; }
           <button class="tab active" id="review-tab-week" onclick="switchReviewTab('week')" style="flex:none;padding:6px 14px;font-size:12px;">Week</button>
           <button class="tab" id="review-tab-history" onclick="switchReviewTab('history')" style="flex:none;padding:6px 14px;font-size:12px;">History</button>
         </div>
-        <button class="btn btn-ghost btn-sm" id="review-reset-btn" onclick="resetWeek()">Archive week</button>
+        <button class="btn btn-ghost btn-sm" id="review-reset-btn" onclick="resetWeek()" title="Archive any completed past weeks into History. This week stays live.">Archive past weeks</button>
         <button class="btn btn-ghost btn-sm" onclick="getAIInsight('review')">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
           AI Review
@@ -1691,11 +1693,13 @@ function todayHoursForTask(taskId) {
   return todaySessions().filter(s => s.taskId === taskId).reduce((sum, s) => sum + s.duration / 3600, 0);
 }
 function todayTotalHours() { return todaySessions().reduce((sum, s) => sum + s.duration / 3600, 0); }
-function weekStart() {
-  const d = new Date(); d.setHours(0,0,0,0);
-  d.setDate(d.getDate() - d.getDay() + 1); // Monday
+function weekStartFor(date) {
+  const d = new Date(date); d.setHours(0,0,0,0);
+  const day = d.getDay(); const diff = day === 0 ? 6 : day - 1; // Sun=0 -> 6 days back to Monday
+  d.setDate(d.getDate() - diff);
   return d;
 }
+function weekStart() { return weekStartFor(new Date()); }
 
 // ---- Workday helpers ----
 function getActiveDays() { return state.settings.activeDays || [0,1,2,3,4]; }
@@ -1794,6 +1798,33 @@ function renderDashboard() {
   recalcWeights(); // always fresh
   const now = new Date();
   document.getElementById('topbar-date').textContent = now.toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric' });
+
+  // Flex/rest day banner
+  const dayIdx = now.getDay() === 0 ? 6 : now.getDay() - 1; // 0=Mon..6=Sun
+  const todayActive = isActiveDay(dayIdx);
+  const bannerEl = document.getElementById('dash-day-banner');
+  if (!todayActive) {
+    const kind = dayIdx === 5 ? 'flex' : 'rest';
+    const icon = kind === 'flex' ? '⚡' : '✦';
+    const todaySess = state.sessions.filter(s => new Date(s.start).toDateString() === now.toDateString());
+    const todayH = todaySess.reduce((sum,s)=>sum+s.duration/3600,0);
+    bannerEl.innerHTML = `
+      <div class="card card-sm" style="border:1px solid rgba(108,99,255,0.25);background:var(--accent-bg);margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;gap:16px;">
+        <div style="display:flex;align-items:center;gap:12px;">
+          <div style="font-size:22px;">${icon}</div>
+          <div>
+            <div style="font-size:13px;font-weight:700;color:var(--accent2);">${kind === 'flex' ? 'Flex day' : 'Rest day'}</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:1px;">Not a core workday — anything you track here is bonus, not a requirement.</div>
+          </div>
+        </div>
+        <div style="text-align:right;flex-shrink:0;">
+          <div style="font-size:20px;font-weight:700;font-family:'DM Mono',monospace;color:var(--accent2);">${todayH.toFixed(1)}h ${icon}</div>
+          <div style="font-size:10px;color:var(--text3);">tracked today</div>
+        </div>
+      </div>`;
+  } else {
+    bannerEl.innerHTML = '';
+  }
 
   const perfect = perfectDayHours();
   const mode = state.today.mode || 'default';
@@ -3005,19 +3036,23 @@ function renderReviewDay() {
   const totalH = daySess.reduce((sum,s) => sum + s.duration/3600, 0);
   const limit = state.settings.hourLimit || 8;
   const score = Math.min(100, Math.round(totalH / limit * 100));
-  const scoreColor = score >= 70 ? 'var(--green)' : score >= 30 ? 'var(--amber)' : 'var(--red)';
+  const dayIdx = d.getDay() === 0 ? 6 : d.getDay() - 1; // 0=Mon..6=Sun
+  const active = isActiveDay(dayIdx);
+  const scoreColor = !active ? 'var(--accent2)' : score >= 70 ? 'var(--green)' : score >= 30 ? 'var(--amber)' : 'var(--red)';
+  const dayKind = dayIdx === 5 ? 'flex' : dayIdx === 6 ? 'rest' : null;
+  const bonusIcon = dayKind === 'flex' ? '⚡' : '✦';
 
   // Score bar
   document.getElementById('review-day-score-row').innerHTML = `
     <div class="card card-sm" style="border-left:3px solid ${scoreColor};">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
-        <div style="font-size:13px;font-weight:600;">Day score</div>
-        <div style="font-size:24px;font-weight:700;font-family:'DM Mono',monospace;color:${scoreColor};">${score}%</div>
+        <div style="font-size:13px;font-weight:600;">${active ? 'Day score' : `${bonusIcon} Bonus day`}</div>
+        <div style="font-size:24px;font-weight:700;font-family:'DM Mono',monospace;color:${scoreColor};">${active ? score+'%' : totalH.toFixed(1)+'h '+bonusIcon}</div>
       </div>
       <div style="height:8px;background:var(--bg4);border-radius:99px;overflow:hidden;">
-        <div style="width:${score}%;height:100%;background:${scoreColor};border-radius:99px;transition:width 0.4s;"></div>
+        <div style="width:${score}%;height:100%;background:${scoreColor};border-radius:99px;transition:width 0.4s;${!active?'opacity:0.6;':''}"></div>
       </div>
-      <div style="font-size:11px;color:var(--text3);margin-top:6px;">${totalH.toFixed(1)}h tracked of ${limit}h target${isToday ? ' · still counting' : ''}</div>
+      <div style="font-size:11px;color:var(--text3);margin-top:6px;">${active ? `${totalH.toFixed(1)}h tracked of ${limit}h target` : `${totalH.toFixed(1)}h tracked — every bit counts as bonus`}${isToday ? ' · still counting' : ''}</div>
     </div>`;
 
   // 3 stat cards
@@ -3177,7 +3212,12 @@ function renderReviewWeek() {
       <div style="height:8px;background:var(--bg4);border-radius:99px;overflow:hidden;">
         <div style="width:${weekScore}%;height:100%;background:${weekScoreColor};border-radius:99px;transition:width 0.4s;"></div>
       </div>
-      ${bonusH>0?`<div style="margin-top:6px;height:4px;background:var(--bg4);border-radius:99px;overflow:hidden;"><div style="width:${Math.min(100,bonusH/limit*100).toFixed(0)}%;height:100%;background:var(--accent2);border-radius:99px;opacity:0.5;"></div></div><div style="font-size:10px;color:var(--text3);margin-top:3px;">⚡ bonus hours (flex/rest days)</div>`:''}
+      ${bonusH>0?(()=>{
+        const flexRestCount = 7 - activeDayIndices.length;
+        const bonusMax = flexRestCount * limit;
+        const bonusPct = bonusMax > 0 ? Math.min(100, bonusH/bonusMax*100) : 0;
+        return `<div style="margin-top:6px;height:4px;background:var(--bg4);border-radius:99px;overflow:hidden;"><div style="width:${bonusPct.toFixed(0)}%;height:100%;background:var(--accent2);border-radius:99px;opacity:0.5;"></div></div><div style="font-size:10px;color:var(--text3);margin-top:3px;">⚡ ${bonusH.toFixed(1)}h of ${bonusMax}h possible bonus (${flexRestCount} flex/rest day${flexRestCount!==1?'s':''})</div>`;
+      })():''}
     </div>`;
 
   // 4 stat cards
@@ -3388,26 +3428,68 @@ function getMostActiveDay(sessions) {
   return days[counts.indexOf(max)];
 }
 
-function resetWeek() {
-  if (!confirm('Archive this week? The data will be saved to History and removed from the active view.')) return;
-  const ws = weekStart();
-  const wkSess = state.sessions.filter(s => new Date(s.start) >= ws);
-  const totalH = wkSess.reduce((sum,s)=>sum+s.duration/3600,0);
-  // Save richer summary
+function buildWeekSummary(weekStartDate, sessions) {
+  const totalHours = sessions.reduce((sum,s)=>sum+s.duration/3600,0);
   const bucketBreakdown = state.buckets.map(b => {
     const bTasks = (b.subBuckets||[]).flatMap(sb=>sb.tasks||[]).map(t=>t.id);
-    const h = wkSess.filter(s=>bTasks.includes(s.taskId)).reduce((sum,s)=>sum+s.duration/3600,0);
+    const h = sessions.filter(s=>bTasks.includes(s.taskId)).reduce((sum,s)=>sum+s.duration/3600,0);
     return { name: b.name, color: b.color, weight: b.weight, hours: h };
   });
-  if (!state.weekSummaries) state.weekSummaries = [];
-  state.weekSummaries.push({
-    week: ws.toISOString(),
-    totalHours: totalH,
-    sessions: wkSess.length,
+  return {
+    week: weekStartDate.toISOString(),
+    totalHours,
+    sessions: sessions.length,
     buckets: bucketBreakdown,
     hourLimit: state.settings.hourLimit || 8,
+    activeDays: getActiveDays(),
+  };
+}
+
+function resetWeek() {
+  const ws = weekStart(); // current week's Monday
+  const pastSessions = state.sessions.filter(s => new Date(s.start) < ws);
+
+  if (!pastSessions.length) {
+    alert('Nothing to archive yet — all your tracked sessions belong to the current week.');
+    return;
+  }
+
+  // Group past sessions by the Monday of the week they belong to
+  const groups = {};
+  pastSessions.forEach(s => {
+    const key = weekStartFor(new Date(s.start)).toISOString();
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(s);
   });
-  state.sessions = state.sessions.filter(s => new Date(s.start) < ws);
+
+  const alreadyArchived = new Set((state.weekSummaries||[]).map(w => w.week));
+  const weekKeys = Object.keys(groups).filter(k => !alreadyArchived.has(k)).sort();
+
+  if (!weekKeys.length) {
+    // Past sessions exist but already archived — just clean them up
+    state.sessions = state.sessions.filter(s => new Date(s.start) >= ws);
+    save(); renderReview();
+    alert('Past weeks were already archived. Cleaned up leftover sessions.');
+    return;
+  }
+
+  const previewLines = weekKeys.map(k => {
+    const d = new Date(k);
+    const end = new Date(d); end.setDate(d.getDate()+6);
+    const totalH = groups[k].reduce((sum,s)=>sum+s.duration/3600,0);
+    const label = d.toLocaleDateString('en-US',{month:'short',day:'numeric'}) + '–' + end.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+    return `  ${label}: ${totalH.toFixed(1)}h (${groups[k].length} sessions)`;
+  }).join('\n');
+
+  if (!confirm(`Archive ${weekKeys.length} past week${weekKeys.length>1?'s':''}?\n\n${previewLines}\n\nThis week's data stays untouched and keeps tracking.`)) return;
+
+  if (!state.weekSummaries) state.weekSummaries = [];
+  weekKeys.forEach(key => {
+    state.weekSummaries.push(buildWeekSummary(new Date(key), groups[key]));
+  });
+
+  // Remove only sessions that were archived; current week stays live
+  state.sessions = state.sessions.filter(s => new Date(s.start) >= ws);
   save(); renderReview();
 }
 
