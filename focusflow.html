@@ -2833,12 +2833,18 @@ async function openPiPTimer(task) {
       <div id="pip-paused-label" style="display:none;font-size:11px;color:#f59e0b;font-weight:700;letter-spacing:0.5px;">⏸ PAUSED</div>
       ${hasLimit ? `<div id="pip-limit-label"></div><div id="pip-bar-wrap"><div id="pip-bar"></div></div>` : ''}
       <div style="display:flex;gap:6px;width:100%;margin-top:4px;">
-        <button id="pip-pause" onclick="window.togglePause()" style="flex:1;background:rgba(255,255,255,0.08);color:#f0f0f8;border:1px solid rgba(255,255,255,0.15);border-radius:8px;padding:5px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">⏸ Pause</button>
-        <button id="pip-stop" onclick="window.stopTracking()" style="flex:1;background:rgba(239,68,68,0.15);color:#ef4444;border:1px solid rgba(239,68,68,0.3);border-radius:8px;padding:5px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">■ Stop</button>
+        <button id="pip-pause" style="flex:1;background:rgba(255,255,255,0.08);color:#f0f0f8;border:1px solid rgba(255,255,255,0.15);border-radius:8px;padding:5px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">⏸ Pause</button>
+        <button id="pip-stop" style="flex:1;background:rgba(239,68,68,0.15);color:#ef4444;border:1px solid rgba(239,68,68,0.3);border-radius:8px;padding:5px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">■ Stop</button>
       </div>`;
 
+    // Use addEventListener from THIS (main) window's scope so the closures
+    // reference the main window's functions, not the PiP window's (which
+    // is a separate JS context and would not have togglePause/stopTracking).
+    pipWindow.document.getElementById('pip-pause').addEventListener('click', () => {
+      togglePause();
+    });
     pipWindow.document.getElementById('pip-stop').addEventListener('click', () => {
-      window.stopTracking();
+      stopTracking();
     });
 
     clearInterval(pipUpdateInterval);
