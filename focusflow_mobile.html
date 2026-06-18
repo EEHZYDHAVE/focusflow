@@ -601,27 +601,44 @@ body {
 
 <!-- Start Session Sheet -->
 <div class="modal-overlay" id="start-sheet">
-  <div class="modal-sheet">
+  <div class="modal-sheet" style="max-height:92vh;">
     <div class="sheet-handle"></div>
-    <div class="sheet-title" id="start-sheet-title">Start session</div>
-    <div style="font-size:13px;color:var(--text3);margin-bottom:16px;" id="start-sheet-meta"></div>
-    <div class="form-group">
-      <label class="form-label">Time limit <span style="color:var(--text3);font-weight:400;">(optional)</span></label>
-      <div class="form-row">
-        <div>
-          <label class="form-label" style="font-size:11px;">Hours</label>
-          <input class="form-input" type="number" id="sl-hours" min="0" max="12" value="0">
-        </div>
-        <div>
-          <label class="form-label" style="font-size:11px;">Minutes</label>
-          <input class="form-input" type="number" id="sl-mins" min="0" max="59" value="25">
-        </div>
+    <!-- Task info -->
+    <div id="sl-task-header" style="margin-bottom:20px;">
+      <div style="font-size:18px;font-weight:700;letter-spacing:-0.4px;" id="sl-task-name">Start session</div>
+      <div style="font-size:12px;color:var(--text3);margin-top:2px;" id="sl-task-meta"></div>
+    </div>
+
+    <!-- Option C: Typical session note -->
+    <div id="sl-typical-note" style="display:none;background:var(--accent-bg);border:1px solid rgba(108,99,255,0.2);border-radius:12px;padding:12px 14px;margin-bottom:16px;">
+      <div style="font-size:12px;font-weight:700;color:var(--accent2);">⚙ Typical session pre-filled</div>
+      <div style="font-size:11px;color:var(--text3);margin-top:3px;" id="sl-typical-label-note"></div>
+    </div>
+
+    <!-- Option E: Smart suggestion chips -->
+    <div id="sl-suggestions" style="display:none;margin-bottom:20px;">
+      <div style="font-size:11px;font-weight:700;letter-spacing:0.6px;text-transform:uppercase;color:var(--text3);margin-bottom:10px;">Suggested limits</div>
+      <div id="sl-chips" style="display:flex;gap:8px;flex-wrap:wrap;"></div>
+    </div>
+
+    <!-- Time inputs -->
+    <div style="font-size:11px;font-weight:700;letter-spacing:0.6px;text-transform:uppercase;color:var(--text3);margin-bottom:8px;">Time limit <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--text3);">(optional)</span></div>
+    <div class="form-row" style="margin-bottom:8px;">
+      <div>
+        <label class="form-label" style="font-size:11px;">Hours</label>
+        <input class="form-input" type="number" id="sl-hours" min="0" max="12" value="0">
+      </div>
+      <div>
+        <label class="form-label" style="font-size:11px;">Minutes</label>
+        <input class="form-input" type="number" id="sl-mins" min="0" max="59" value="0">
       </div>
     </div>
-    <div style="display:flex;gap:10px;margin-top:4px;">
+    <div style="font-size:11px;color:var(--text3);margin-bottom:24px;">Timer stops automatically and plays a sound when limit is reached. Leave at 0 to track freely.</div>
+
+    <div style="display:flex;gap:10px;">
       <button class="btn btn-ghost" style="flex:1;" onclick="closeSheet('start-sheet')">Cancel</button>
       <button class="btn btn-ghost" style="flex:1;" onclick="confirmStart(false)">No limit</button>
-      <button class="btn btn-primary" style="flex:1;" onclick="confirmStart(true)">Start</button>
+      <button class="btn btn-primary" style="flex:1;" onclick="confirmStart(true)">Start →</button>
     </div>
   </div>
 </div>
@@ -734,6 +751,20 @@ body {
     <div class="form-group">
       <label class="form-label">Time window</label>
       <input class="form-input" id="card-timewindow" placeholder="e.g. 9am – 11am">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Typical session length <span style="color:var(--text3);font-weight:400;">— pre-fills timer when you start this task</span></label>
+      <div class="form-row">
+        <div>
+          <label class="form-label" style="font-size:11px;">Hours</label>
+          <input class="form-input" type="number" id="card-typical-h" min="0" max="12" value="0">
+        </div>
+        <div>
+          <label class="form-label" style="font-size:11px;">Minutes</label>
+          <input class="form-input" type="number" id="card-typical-m" min="0" max="59" value="0">
+        </div>
+      </div>
+      <div style="font-size:11px;color:var(--text3);margin-top:5px;">Leave at 0 to use smart suggestions based on remaining hours.</div>
     </div>
     <div class="form-group">
       <label class="form-label">Note</label>
@@ -1227,13 +1258,71 @@ let timerInterval = null;
 function startSession(taskId, bucketId, sbId) {
   if (state.activeSession) { showToast('Stop current session first'); return; }
   const task = allTasks().find(t => t.id === taskId);
-  // Store pending and open sheet
   _pendingTask = { taskId, bucketId, sbId };
-  document.getElementById('start-sheet-title').textContent = task?.name || 'Start session';
-  document.getElementById('start-sheet-meta').textContent = task ? `${task.bucketName} › ${task.sbName}` : '';
+
+  // Header
+  document.getElementById('sl-task-name').textContent = task?.name || 'Start session';
+  document.getElementById('sl-task-meta').textContent = task ? `${task.bucketName} › ${task.sbName}` : '';
+
+  // Load card data
+  const card = cards[taskId] || {};
+  const typicalMins = card.typicalMins || 0;
+  const trackedH = taskTodayH(taskId);
+  const remainingH = Math.max(0, (task?.hours || 0) - trackedH);
+  const remainingMins = Math.round(remainingH * 60);
+
+  // Reset
   document.getElementById('sl-hours').value = 0;
-  document.getElementById('sl-mins').value = 25;
+  document.getElementById('sl-mins').value = 0;
+  const typNoteEl = document.getElementById('sl-typical-note');
+  const suggEl = document.getElementById('sl-suggestions');
+  const chipsEl = document.getElementById('sl-chips');
+  typNoteEl.style.display = 'none';
+  suggEl.style.display = 'none';
+  chipsEl.innerHTML = '';
+
+  if (typicalMins > 0) {
+    // Option C — pre-fill typical session
+    document.getElementById('sl-hours').value = Math.floor(typicalMins / 60);
+    document.getElementById('sl-mins').value = typicalMins % 60;
+    document.getElementById('sl-typical-label-note').textContent =
+      `${formatMobileMins(typicalMins)} set as typical session for this task`;
+    typNoteEl.style.display = 'block';
+    // Also show remaining chip if it's less than typical
+    if (remainingMins > 5 && remainingMins < typicalMins) {
+      suggEl.style.display = 'block';
+      chipsEl.innerHTML = buildMobileChip(remainingMins, `${formatMobileMins(remainingMins)} — task balance`);
+    }
+  } else if (remainingMins > 5) {
+    // Option E — suggest chips, don't pre-fill
+    suggEl.style.display = 'block';
+    const chipSet = new Map();
+    if (remainingMins >= 60) chipSet.set(60, '1h');
+    if (remainingMins >= 90) chipSet.set(90, '1h 30m');
+    if (remainingMins >= 30 && remainingMins < 60) chipSet.set(30, '30m');
+    if (remainingMins >= 45 && remainingMins < 90) chipSet.set(45, '45m');
+    chipSet.set(remainingMins, `${formatMobileMins(remainingMins)} — task balance`);
+    const chips = [...chipSet.entries()].slice(0, 3)
+      .map(([mins, label]) => buildMobileChip(mins, label)).join('');
+    chipsEl.innerHTML = chips;
+  }
+  // Option D — fields remain at 0 (no limit)
+
   openSheet('start-sheet');
+}
+
+function buildMobileChip(mins, label) {
+  const h = Math.floor(mins/60), m = mins%60;
+  return `<button onclick="document.getElementById('sl-hours').value=${h};document.getElementById('sl-mins').value=${m};"
+    style="background:var(--bg3);border:1px solid var(--border2);border-radius:99px;padding:8px 16px;font-size:13px;font-weight:600;color:var(--text2);cursor:pointer;font-family:inherit;white-space:nowrap;"
+    >${label}</button>`;
+}
+
+function formatMobileMins(mins) {
+  const h = Math.floor(mins/60), m = mins%60;
+  if (h > 0 && m > 0) return `${h}h ${m}m`;
+  if (h > 0) return `${h}h`;
+  return `${m}m`;
 }
 let _pendingTask = null;
 
@@ -2019,8 +2108,8 @@ function renderCards() {
       </div>`:''}
       ${!c.timeWindow&&!c.note&&!steps.length?`<div onclick="openCardEdit('${t.id}')" style="border:1px dashed var(--border2);border-radius:9px;padding:14px;text-align:center;cursor:pointer;color:var(--text3);font-size:13px;">+ Add steps & context</div>`:''}
       <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;padding-top:10px;border-top:1px solid var(--border);">
-        <span style="font-size:12px;color:var(--text3);">Planned</span>
-        <span style="font-size:12px;font-weight:600;font-family:'DM Mono',monospace;">${t.hours}h</span>
+        <span style="font-size:12px;color:var(--text3);">Planned: <span style="font-weight:600;font-family:'DM Mono',monospace;">${t.hours}h</span></span>
+        ${c.typicalMins?`<span style="font-size:12px;color:var(--accent2);font-weight:600;">⚙ ${formatMobileMins(c.typicalMins)} / session</span>`:''}
       </div>
     </div>`;
   }).join('');
@@ -2031,6 +2120,11 @@ function openCardEdit(taskId) {
   document.getElementById('card-task-id').value=taskId;
   document.getElementById('card-timewindow').value=c.timeWindow||'';
   document.getElementById('card-note').value=c.note||'';
+  const typMins = c.typicalMins || 0;
+  const typH = document.getElementById('card-typical-h');
+  const typM = document.getElementById('card-typical-m');
+  if (typH) typH.value = Math.floor(typMins/60);
+  if (typM) typM.value = typMins%60;
   _editSteps=[...(c.steps||[])];
   renderEditSteps();
   openSheet('card-sheet');
@@ -2051,7 +2145,14 @@ function cardAddStep() {
 function saveCard() {
   const taskId=document.getElementById('card-task-id').value;
   if (!taskId) return;
-  cards[taskId]={ timeWindow:document.getElementById('card-timewindow').value.trim(), note:document.getElementById('card-note').value.trim(), steps:_editSteps.filter(s=>s.trim()) };
+  const typH = parseInt(document.getElementById('card-typical-h')?.value)||0;
+  const typM = parseInt(document.getElementById('card-typical-m')?.value)||0;
+  cards[taskId]={
+    timeWindow:document.getElementById('card-timewindow').value.trim(),
+    note:document.getElementById('card-note').value.trim(),
+    steps:_editSteps.filter(s=>s.trim()),
+    typicalMins: typH*60+typM || 0,
+  };
   saveCards(); closeSheet('card-sheet'); renderCards();
 }
 

@@ -626,24 +626,43 @@ nav { padding: 16px 12px; flex: 1; }
 </div>
 
 <!-- TIMER LIMIT MODAL -->
-<div class="modal-overlay" id="timer-limit-modal">
-  <div class="modal" style="width:380px;">
-    <div class="modal-title">⏱ Set time limit for this session</div>
-    <div style="font-size:13px;color:var(--text2);margin-bottom:18px;">When the timer hits your limit, tracking will stop automatically and you will hear a sound alert.</div>
-    <div class="form-row" style="margin-bottom:12px;">
-      <div class="form-group" style="margin-bottom:0;">
-        <label class="form-label">Hours</label>
-        <input class="form-input" type="number" id="limit-hours" min="0" max="12" value="0" placeholder="0">
+<div class="modal-overlay" id="timer-limit-modal" onclick="if(event.target===this)startTrackingNoLimit()">
+  <div class="modal" style="width:440px;">
+    <!-- Header -->
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+      <div class="modal-title" style="margin-bottom:0;" id="tl-modal-task-name">Start session</div>
+      <button onclick="startTrackingNoLimit()" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px;line-height:1;padding:2px 4px;" title="Cancel">✕</button>
+    </div>
+    <div id="tl-modal-task-meta" style="font-size:12px;color:var(--text3);margin-bottom:20px;"></div>
+
+    <!-- Smart suggestion chip — shown when Option E applies -->
+    <div id="tl-suggestion" style="display:none;margin-bottom:16px;">
+      <div style="font-size:11px;font-weight:700;letter-spacing:0.6px;text-transform:uppercase;color:var(--text3);margin-bottom:8px;">Suggested</div>
+      <div id="tl-suggestion-chips" style="display:flex;gap:8px;flex-wrap:wrap;"></div>
+    </div>
+
+    <!-- Typical session note — shown when Option C applies -->
+    <div id="tl-typical-note" style="display:none;background:var(--accent-bg);border:1px solid rgba(108,99,255,0.2);border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:16px;font-size:12px;color:var(--accent2);">
+      <span style="font-weight:600;">⚙ Typical session</span> <span id="tl-typical-label"></span> — pre-filled from your Task Card
+    </div>
+
+    <!-- Time inputs -->
+    <div style="font-size:11px;font-weight:700;letter-spacing:0.6px;text-transform:uppercase;color:var(--text3);margin-bottom:8px;">Time limit <span style="font-weight:400;text-transform:none;letter-spacing:0;">(optional)</span></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:8px;">
+      <div>
+        <label class="form-label" style="font-size:11px;">Hours</label>
+        <input class="form-input" type="number" id="limit-hours" min="0" max="12" value="0">
       </div>
-      <div class="form-group" style="margin-bottom:0;">
-        <label class="form-label">Minutes</label>
-        <input class="form-input" type="number" id="limit-mins" min="0" max="59" value="25" placeholder="25">
+      <div>
+        <label class="form-label" style="font-size:11px;">Minutes</label>
+        <input class="form-input" type="number" id="limit-mins" min="0" max="59" value="0">
       </div>
     </div>
-    <div style="font-size:11px;color:var(--text3);margin-bottom:18px;">Set to 0 hours and 0 minutes to track without a limit.</div>
+    <div style="font-size:11px;color:var(--text3);margin-bottom:20px;">When the timer hits your limit it stops automatically and plays a sound. Leave at 0 to track without a limit.</div>
+
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="startTrackingNoLimit()">No limit</button>
-      <button class="btn btn-primary" onclick="confirmTimerLimit()">Start with limit</button>
+      <button class="btn btn-primary" onclick="confirmTimerLimit()">Start →</button>
     </div>
   </div>
 </div>
@@ -767,8 +786,24 @@ nav { padding: 16px 12px; flex: 1; }
 
       <!-- Time window -->
       <div class="form-group">
-        <label class="form-label">Time window <span style="color:var(--text3);font-weight:400;">(optional — e.g. "9am – 11am" or "Mon–Wed")</span></label>
+        <label class="form-label">Time window <span style="color:var(--text3);font-weight:400;">(optional — e.g. "9am – 11am")</span></label>
         <input class="form-input" type="text" id="tc-modal-timewindow" placeholder="e.g. 9am – 11am">
+      </div>
+
+      <!-- Typical session -->
+      <div class="form-group">
+        <label class="form-label">Typical session length <span style="color:var(--text3);font-weight:400;">(optional — pre-fills timer when you start this task)</span></label>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <div>
+            <label class="form-label" style="font-size:11px;">Hours</label>
+            <input class="form-input" type="number" id="tc-modal-typical-h" min="0" max="12" value="0" placeholder="0">
+          </div>
+          <div>
+            <label class="form-label" style="font-size:11px;">Minutes</label>
+            <input class="form-input" type="number" id="tc-modal-typical-m" min="0" max="59" value="0" placeholder="0">
+          </div>
+        </div>
+        <div style="font-size:11px;color:var(--text3);margin-top:5px;">Leave both at 0 to use smart suggestions based on remaining task hours instead.</div>
       </div>
 
       <!-- Note -->
@@ -2095,10 +2130,10 @@ function renderTaskCards() {
         <div style="font-size:11px;color:var(--text3);">Add steps & context</div>
       </div>` : ''}
 
-      <!-- Footer: task hours -->
+      <!-- Footer: task hours + typical session -->
       <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;">
-        <span style="font-size:11px;color:var(--text3);">Planned</span>
-        <span style="font-size:11px;font-weight:600;font-family:'DM Mono',monospace;color:var(--text2);">${task.hours}h</span>
+        <span style="font-size:11px;color:var(--text3);">Planned: <span style="font-weight:600;color:var(--text2);font-family:'DM Mono',monospace;">${task.hours}h</span></span>
+        ${card.typicalMins ? `<span style="font-size:11px;color:var(--accent2);font-weight:600;">⚙ ${formatMins(card.typicalMins)} / session</span>` : ''}
       </div>
     </div>`;
   }).join('') +
@@ -2141,6 +2176,9 @@ function openTaskCardModal(taskId) {
     document.getElementById('tc-modal-taskid').value = taskId;
     document.getElementById('tc-modal-timewindow').value = card.timeWindow || '';
     document.getElementById('tc-modal-note').value = card.note || '';
+    const typMins = card.typicalMins || 0;
+    document.getElementById('tc-modal-typical-h').value = Math.floor(typMins / 60);
+    document.getElementById('tc-modal-typical-m').value = typMins % 60;
     tcEditSteps = [...(card.steps || [])];
     document.getElementById('tc-modal-title').textContent = 'Edit Task Card';
   } else {
@@ -2161,6 +2199,9 @@ function tcModalTaskChange() {
   const card = tcCards[taskId] || {};
   document.getElementById('tc-modal-timewindow').value = card.timeWindow || '';
   document.getElementById('tc-modal-note').value = card.note || '';
+  const typMins = card.typicalMins || 0;
+  document.getElementById('tc-modal-typical-h').value = Math.floor(typMins / 60);
+  document.getElementById('tc-modal-typical-m').value = typMins % 60;
   tcEditSteps = [...(card.steps || [])];
   renderTCModalSteps();
 }
@@ -2194,10 +2235,13 @@ function saveTaskCard() {
   const taskId = document.getElementById('tc-modal-taskid').value ||
                  document.getElementById('tc-modal-task').value;
   if (!taskId) { alert('Please select a task first.'); return; }
+  const typH = parseInt(document.getElementById('tc-modal-typical-h')?.value) || 0;
+  const typM = parseInt(document.getElementById('tc-modal-typical-m')?.value) || 0;
   tcCards[taskId] = {
     timeWindow: document.getElementById('tc-modal-timewindow').value.trim(),
     note: document.getElementById('tc-modal-note').value.trim(),
     steps: tcEditSteps.filter(s => s.trim()),
+    typicalMins: typH * 60 + typM || 0,
   };
   saveTaskCards();
   closeModal('taskcard-modal');
@@ -2421,9 +2465,74 @@ let pendingTrackTask = null;
 function startTracking(taskId, bucketId, sbId) {
   if (state.activeSession) stopTracking();
   pendingTrackTask = { taskId, bucketId, sbId };
+  loadTaskCards();
+  const task = allTasks().find(t => t.id === taskId);
+  const card = tcCards[taskId] || {};
+
+  // Populate header
+  document.getElementById('tl-modal-task-name').textContent = task?.name || 'Start session';
+  document.getElementById('tl-modal-task-meta').textContent = task ? `${task.bucketName} › ${task.sbName}` : '';
+
+  // Cascade C → E → D
+  const typicalMins = card.typicalMins || 0;
+  const trackedH = todayHoursForTask ? todayHoursForTask(taskId) : 0;
+  const remainingH = Math.max(0, (task?.hours || 0) - trackedH);
+  const remainingMins = Math.round(remainingH * 60);
+
+  // Reset fields
   document.getElementById('limit-hours').value = 0;
-  document.getElementById('limit-mins').value = 25;
+  document.getElementById('limit-mins').value = 0;
+
+  const suggEl = document.getElementById('tl-suggestion');
+  const chipsEl = document.getElementById('tl-suggestion-chips');
+  const typNoteEl = document.getElementById('tl-typical-note');
+  const typLabelEl = document.getElementById('tl-typical-label');
+
+  suggEl.style.display = 'none';
+  typNoteEl.style.display = 'none';
+  chipsEl.innerHTML = '';
+
+  if (typicalMins > 0) {
+    // Option C — pre-fill with typical session
+    document.getElementById('limit-hours').value = Math.floor(typicalMins / 60);
+    document.getElementById('limit-mins').value = typicalMins % 60;
+    typLabelEl.textContent = formatMins(typicalMins);
+    typNoteEl.style.display = 'block';
+    // If remaining < typical, also show a remaining chip
+    if (remainingMins > 5 && remainingMins < typicalMins) {
+      suggEl.style.display = 'block';
+      chipsEl.innerHTML = buildChip(remainingMins, `${formatMins(remainingMins)} remaining on task`);
+    }
+  } else if (remainingMins > 5) {
+    // Option E — suggest remaining, but don't pre-fill
+    suggEl.style.display = 'block';
+    const chips = [];
+    // Show up to 3 useful suggestions
+    if (remainingMins >= 60) chips.push(buildChip(60, '1h'));
+    if (remainingMins >= 30 && remainingMins < 60) chips.push(buildChip(30, '30m'));
+    if (remainingMins >= 45 && remainingMins < 90) chips.push(buildChip(45, '45m'));
+    chips.push(buildChip(remainingMins, `${formatMins(remainingMins)} — task balance`));
+    chipsEl.innerHTML = [...new Set(chips)].slice(0, 3).join('');
+  }
+  // Option D — fields stay at 0 (no limit default)
+
   openModal('timer-limit-modal');
+}
+
+function buildChip(mins, label) {
+  const h = Math.floor(mins/60), m = mins%60;
+  return `<button onclick="document.getElementById('limit-hours').value=${h};document.getElementById('limit-mins').value=${m};"
+    style="background:var(--bg3);border:1px solid var(--border2);border-radius:99px;padding:6px 14px;font-size:12px;font-weight:600;color:var(--text2);cursor:pointer;font-family:inherit;transition:all 0.15s;white-space:nowrap;"
+    onmouseover="this.style.background='var(--accent-bg)';this.style.borderColor='var(--accent)';this.style.color='var(--accent2)'"
+    onmouseout="this.style.background='var(--bg3)';this.style.borderColor='var(--border2)';this.style.color='var(--text2)'"
+    >${label}</button>`;
+}
+
+function formatMins(mins) {
+  const h = Math.floor(mins/60), m = mins%60;
+  if (h > 0 && m > 0) return `${h}h ${m}m`;
+  if (h > 0) return `${h}h`;
+  return `${m}m`;
 }
 
 function startTrackingNoLimit() {
