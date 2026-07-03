@@ -1244,6 +1244,7 @@ nav { padding: 16px 12px; flex: 1; }
               <input type="file" accept=".json" onchange="importJSON(event)" style="display:none;">
             </label>
             <button class="btn btn-danger" onclick="clearAllData()">Clear all data</button>
+            <button class="btn btn-ghost" onclick="cleanOrphanedSessions()" style="color:var(--amber);border-color:rgba(245,158,11,0.3);">🧹 Remove unknown sessions</button>
           </div>
           <div style="font-size:11px;color:var(--text3);margin-top:12px;">Export your data to use across browsers. Import to restore.</div>
         </div>
@@ -3800,6 +3801,22 @@ function importJSON(e) {
   };
   reader.readAsText(file);
 }
+function cleanOrphanedSessions() {
+  const validTaskIds = new Set(allTasks().map(t => t.id));
+  const orphans = state.sessions.filter(s => !validTaskIds.has(s.taskId));
+  if (!orphans.length) {
+    alert('No unknown sessions found — everything looks clean.');
+    return;
+  }
+  const totalH = orphans.reduce((sum,s)=>sum+s.duration/3600,0).toFixed(1);
+  if (!confirm(`Found ${orphans.length} session${orphans.length!==1?'s':''} (${totalH}h) with no matching task.\n\nThese are from deleted buckets or tasks. Remove them all?`)) return;
+  state.sessions = state.sessions.filter(s => validTaskIds.has(s.taskId));
+  save();
+  renderReview();
+  renderDashboard();
+  showToast(`Removed ${orphans.length} unknown session${orphans.length!==1?'s':''}`, 'var(--green)', 4000);
+}
+
 function clearAllData() {
   if (!confirm('This will delete ALL data. Are you sure?')) return;
   localStorage.removeItem('focusflow_v2');
