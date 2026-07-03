@@ -1,5 +1,5 @@
 // ─── INCREMENT THIS NUMBER every time you upload a new version ───
-const VERSION = 17;
+const VERSION = 18;
 // ─────────────────────────────────────────────────────────────────
 
 const CACHE = `focusflow-v${VERSION}`;

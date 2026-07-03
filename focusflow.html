@@ -19,6 +19,7 @@
       .catch(err => console.error('SW registration failed:', err));
   }
 </script>
+
 <style>
 :root {
   --bg: #0a0a0f;
@@ -1582,9 +1583,18 @@ function saveBucket() {
   save(); closeModal('bucket-modal'); renderBuckets();
 }
 function deleteBucket(id) {
-  if (!confirm('Delete this bucket and all its tasks?')) return;
+  const bucket = state.buckets.find(b => b.id === id);
+  if (!bucket) return;
+  const taskIds = (bucket.subBuckets||[]).flatMap(sb=>(sb.tasks||[]).map(t=>t.id));
+  const sessionCount = state.sessions.filter(s => s.bucketId === id || taskIds.includes(s.taskId)).length;
+  const msg = sessionCount > 0
+    ? `Delete "${bucket.name}" and all its tasks?\n\nThis will also remove ${sessionCount} tracked session${sessionCount!==1?'s':''} for this bucket. This cannot be undone.`
+    : `Delete "${bucket.name}" and all its tasks?`;
+  if (!confirm(msg)) return;
+  state.sessions = state.sessions.filter(s => s.bucketId !== id && !taskIds.includes(s.taskId));
   state.buckets = state.buckets.filter(b => b.id !== id);
   save(); renderBuckets();
+  if (sessionCount > 0) showToast(`Bucket and ${sessionCount} session${sessionCount!==1?'s':''} removed`, 'var(--amber)', 4000);
 }
 
 // ============ SUBBUCKET CRUD ============
@@ -3485,7 +3495,6 @@ function renderReviewHistory() {
     return;
   }
   emptyEl.style.display = 'none';
-  const limit = state.settings.hourLimit || 8;
   const maxH = Math.max(...history.map(w => w.totalHours || 0), 1);
 
   listEl.innerHTML = `
@@ -3494,7 +3503,11 @@ function renderReviewHistory() {
         const weekDate = new Date(w.week);
         const weekEnd = new Date(weekDate); weekEnd.setDate(weekDate.getDate() + 6);
         const label = weekDate.toLocaleDateString('en-US', {month:'short', day:'numeric'}) + ' – ' + weekEnd.toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
-        const score = Math.min(100, Math.round((w.totalHours||0) / (limit*5) * 100));
+        // Use locked values from archive time — not current settings
+        const lockedLimit  = w.hourLimit || 8;
+        const lockedActive = w.activeDays ? w.activeDays.length : 5;
+        const lockedTarget = lockedLimit * lockedActive;
+        const score = Math.min(100, Math.round((w.totalHours||0) / lockedTarget * 100));
         const scoreColor = score >= 70 ? 'var(--green)' : score >= 40 ? 'var(--amber)' : 'var(--red)';
         const barW = Math.round(((w.totalHours||0) / maxH) * 100);
         const prev = history[i+1];
@@ -3506,6 +3519,7 @@ function renderReviewHistory() {
             <div>
               <div style="font-size:11px;color:var(--text3);margin-bottom:3px;">${label}</div>
               <div style="font-size:22px;font-weight:700;font-family:'DM Mono',monospace;color:${scoreColor};">${score}%</div>
+              <div style="font-size:10px;color:var(--text3);margin-top:2px;">Target at time: ${lockedTarget}h (${lockedLimit}h × ${lockedActive}d)</div>
             </div>
             <div style="text-align:right;">
               <div style="font-size:14px;font-weight:600;">${(w.totalHours||0).toFixed(1)}h</div>
@@ -3525,9 +3539,12 @@ function renderReviewHistory() {
       <div style="display:flex;align-items:flex-end;gap:8px;height:160px;padding:0 4px;">
         ${history.slice().reverse().map((w, i) => {
           const h = w.totalHours || 0;
+          const lockedLimit  = w.hourLimit || 8;
+          const lockedActive = w.activeDays ? w.activeDays.length : 5;
+          const lockedTarget = lockedLimit * lockedActive;
           const barPx = Math.max(6, Math.round((h / maxH) * 140));
-          const col = h >= limit*5*0.7 ? 'var(--green)' : h >= limit*5*0.4 ? 'var(--accent)' : 'var(--red)';
-          const borderCol = h >= limit*5*0.7 ? 'rgba(34,197,94,0.4)' : h >= limit*5*0.4 ? 'rgba(108,99,255,0.4)' : 'rgba(239,68,68,0.4)';
+          const col = h >= lockedTarget*0.7 ? 'var(--green)' : h >= lockedTarget*0.4 ? 'var(--accent)' : 'var(--red)';
+          const borderCol = h >= lockedTarget*0.7 ? 'rgba(34,197,94,0.4)' : h >= lockedTarget*0.4 ? 'rgba(108,99,255,0.4)' : 'rgba(239,68,68,0.4)';
           const weekDate = new Date(w.week);
           const wLabel = weekDate.toLocaleDateString('en-US', {month:'short', day:'numeric'});
           return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:4px;height:100%;">
