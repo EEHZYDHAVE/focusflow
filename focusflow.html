@@ -668,6 +668,32 @@ nav { padding: 16px 12px; flex: 1; }
   </div>
 </div>
 
+<!-- EDIT SESSION MODAL -->
+<div class="modal-overlay" id="edit-session-modal" onclick="if(event.target===this)closeModal('edit-session-modal')">
+  <div class="modal" style="width:380px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+      <div class="modal-title" style="margin-bottom:0;">Edit session</div>
+      <button onclick="closeModal('edit-session-modal')" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px;">✕</button>
+    </div>
+    <input type="hidden" id="desk-edit-session-id">
+    <div id="desk-edit-session-info" style="font-size:13px;color:var(--text2);margin-bottom:16px;padding:10px 12px;background:var(--bg3);border-radius:var(--radius-sm);"></div>
+    <div class="form-row" style="margin-bottom:18px;">
+      <div class="form-group" style="margin-bottom:0;">
+        <label class="form-label">Hours</label>
+        <input class="form-input" type="number" id="desk-edit-sess-hours" min="0" max="24" value="0">
+      </div>
+      <div class="form-group" style="margin-bottom:0;">
+        <label class="form-label">Minutes</label>
+        <input class="form-input" type="number" id="desk-edit-sess-mins" min="0" max="59" value="0">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('edit-session-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="deskSaveEditSession()">Save</button>
+    </div>
+  </div>
+</div>
+
 <!-- MAIN -->
 <main id="main">
 
@@ -3250,13 +3276,16 @@ function renderReviewDay() {
       const t = tasks.find(x => x.id === s.taskId);
       const mins = Math.round(s.duration/60);
       const time = new Date(s.start).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
-      return `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);">
+      const durLabel = mins >= 60 ? (mins/60).toFixed(1)+'h' : mins+'m';
+      return `<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);">
         <div class="bucket-dot" style="background:${t?t.bucketColor:'var(--text3)'};width:7px;height:7px;flex-shrink:0;"></div>
         <div style="flex:1;min-width:0;">
           <div style="font-size:12px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${t?t.name:'Unknown'}</div>
           <div style="font-size:10px;color:var(--text3);">${time}${s.manual?' · manual':''}</div>
         </div>
-        <div style="font-size:11px;color:var(--text2);font-family:'DM Mono',monospace;font-weight:500;">${mins >= 60 ? (mins/60).toFixed(1)+'h' : mins+'m'}</div>
+        <div style="font-size:11px;color:var(--text2);font-family:'DM Mono',monospace;font-weight:500;flex-shrink:0;">${durLabel}</div>
+        <button onclick="desktopEditSession('${s.id}')" style="background:var(--bg3);border:1px solid var(--border2);border-radius:6px;padding:3px 9px;font-size:11px;color:var(--text2);cursor:pointer;font-family:inherit;flex-shrink:0;">Edit</button>
+        <button onclick="desktopDeleteSession('${s.id}')" style="background:var(--red-bg);border:1px solid rgba(239,68,68,0.2);border-radius:6px;padding:3px 9px;font-size:11px;color:var(--red);cursor:pointer;font-family:inherit;flex-shrink:0;">✕</button>
       </div>`;
     }).join('');
   }
@@ -3478,6 +3507,48 @@ function renderReviewWeek() {
     <div class="bucket-detail-row"><span style="font-size:13px;color:var(--text2);">Most active bucket</span><span style="font-weight:600;color:var(--accent2);">${mostActiveBucket}</span></div>
     <div class="bucket-detail-row"><span style="font-size:13px;color:var(--text2);">Most neglected bucket</span><span style="font-weight:600;color:var(--amber);">${neglectedBucket}</span></div>
     <div class="bucket-detail-row"><span style="font-size:13px;color:var(--text2);">Sessions logged</span><span style="font-weight:600;">${wkSess.length}</span></div>`;
+}
+
+function desktopEditSession(sessionId) {
+  const s = state.sessions.find(x => x.id === sessionId);
+  if (!s) return;
+  const task = allTasks().find(t => t.id === s.taskId);
+  const time = new Date(s.start).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+  const totalMins = Math.round(s.duration / 60);
+  document.getElementById('desk-edit-session-id').value = sessionId;
+  document.getElementById('desk-edit-session-info').innerHTML =
+    `<strong>${task?.name || 'Unknown'}</strong> &nbsp;·&nbsp; ${time}${s.manual ? ' · manual' : ''}`;
+  document.getElementById('desk-edit-sess-hours').value = Math.floor(totalMins / 60);
+  document.getElementById('desk-edit-sess-mins').value = totalMins % 60;
+  openModal('edit-session-modal');
+}
+
+function deskSaveEditSession() {
+  const id = document.getElementById('desk-edit-session-id').value;
+  const h  = parseInt(document.getElementById('desk-edit-sess-hours').value) || 0;
+  const m  = parseInt(document.getElementById('desk-edit-sess-mins').value)  || 0;
+  const newDuration = h * 3600 + m * 60;
+  if (newDuration <= 0) { alert('Duration must be greater than 0.'); return; }
+  const s = state.sessions.find(x => x.id === id);
+  if (s) { s.duration = newDuration; s.manual = true; }
+  save();
+  closeModal('edit-session-modal');
+  showToast('Session updated ✓', 'var(--green)');
+  renderReview();
+  renderDashboard();
+}
+
+function desktopDeleteSession(sessionId) {
+  const s = state.sessions.find(x => x.id === sessionId);
+  const task = allTasks().find(t => t.id === s?.taskId);
+  const mins = Math.round((s?.duration || 0) / 60);
+  const durLabel = mins >= 60 ? (mins/60).toFixed(1)+'h' : mins+'m';
+  if (!confirm(`Delete this session?\n\n${task?.name || 'Unknown'} · ${durLabel}\n\nThis cannot be undone.`)) return;
+  state.sessions = state.sessions.filter(x => x.id !== sessionId);
+  save();
+  showToast('Session deleted', 'var(--amber)');
+  renderReview();
+  renderDashboard();
 }
 
 function jumpToDay(offset) {
