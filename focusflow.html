@@ -858,9 +858,10 @@ nav { padding: 16px 12px; flex: 1; }
     <div class="topbar">
       <div class="topbar-left">
         <div class="page-title">Tracker</div>
-        <div class="page-sub">Track your time in real time</div>
+        <div class="page-sub" id="tracker-day-sub">Track your time in real time</div>
       </div>
       <div class="topbar-right">
+        <div id="tracker-day-target" style="display:none;background:var(--accent-bg);border:1px solid rgba(108,99,255,0.25);border-radius:var(--radius-sm);padding:4px 10px;font-size:11px;font-weight:600;color:var(--accent2);cursor:pointer;" onclick="showPage('planner')" title="Reduced day active — click to adjust in Planner"></div>
         <button class="btn btn-ghost btn-sm" id="sort-toggle-btn" onclick="toggleTrackerSort()">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="6" y1="12" x2="18" y2="12"/><line x1="9" y1="18" x2="15" y2="18"/></svg>
           Priority order
@@ -1738,6 +1739,42 @@ function effectiveAvailableHours() {
   return state.today.availableHours || 8;
 }
 
+// Get today's target for scoring — respects reduced day
+function getTodayTarget() {
+  const limit = state.settings.hourLimit || 8;
+  if (state.today.mode === 'reduced') return state.today.availableHours || limit;
+  return limit;
+}
+
+// Auto-reset reduced day if it was set on a different calendar day
+function checkDayReset() {
+  const todayStr = new Date().toDateString();
+  if (state.today.reducedSetDate && state.today.reducedSetDate !== todayStr) {
+    // New day — reset to default
+    state.today.mode = 'default';
+    state.today.availableHours = state.settings.hourLimit || 8;
+    state.today.reducedSetDate = null;
+    state.today.apportioned = null;
+    save();
+  }
+}
+
+// Update the tracker topbar day badge
+function updateTrackerDayBadge() {
+  const badge = document.getElementById('tracker-day-target');
+  const sub   = document.getElementById('tracker-day-sub');
+  if (!badge) return;
+  if (state.today.mode === 'reduced') {
+    const h = state.today.availableHours || 8;
+    badge.style.display = 'block';
+    badge.textContent = `⏳ Reduced: ${h}h today`;
+    if (sub) sub.textContent = `Reduced day — ${h}h target`;
+  } else {
+    badge.style.display = 'none';
+    if (sub) sub.textContent = 'Track your time in real time';
+  }
+}
+
 // Get tasks visible under current allocation rule
 function tasksForMode() {
   const avail = effectiveAvailableHours();
@@ -1811,9 +1848,11 @@ function setMode(mode) {
   if (mode === 'reduced') {
     if (!state.today.availableHours) state.today.availableHours = Math.min(5, perfectDayHours() || 5);
     if (!state.today.allocationRule) state.today.allocationRule = { belowHours: 5, belowMode: 'urgent', aboveMode: 'all' };
+    state.today.reducedSetDate = new Date().toDateString(); // lock to today
   }
   if (mode === 'default') {
-    state.today.apportioned = null; // clear any reduced allocation
+    state.today.apportioned = null;
+    state.today.reducedSetDate = null;
   }
   save(); renderDashboard();
 }
@@ -2440,6 +2479,8 @@ function toggleTrackerSort() {
 }
 
 function renderTracker() {
+  checkDayReset();
+  updateTrackerDayBadge();
   let tasks = allTasks();
   if (trackerSortMode === 'priority') {
     tasks = tasks.slice().sort((a, b) => {
@@ -2686,7 +2727,7 @@ function stopTracking(fromLimit = false) {
   clearInterval(timerInterval); timerInterval = null;
   const duration = getElapsed(); // only counts non-paused time
   const taskId = state.activeSession.taskId;
-  state.sessions.push({ id: uid(), taskId, bucketId: state.activeSession.bucketId, sbId: state.activeSession.sbId, start: state.activeSession.startTime, duration });
+  state.sessions.push({ id: uid(), taskId, bucketId: state.activeSession.bucketId, sbId: state.activeSession.sbId, start: state.activeSession.startTime, duration, dailyTarget: getTodayTarget() });
   _lastSessionEndTime = Date.now();
   state.activeSession = null;
   document.getElementById('main-timer').textContent = '00:00:00';
@@ -3153,7 +3194,7 @@ function saveManualLog() {
   const hours = parseFloat(document.getElementById('manual-hours').value);
   if (!taskId || !hours) return alert('Select a task and enter hours.');
   const task = allTasks().find(t => t.id === taskId);
-  state.sessions.push({ id: uid(), taskId, bucketId: task.bucketId, sbId: task.sbId, start: Date.now(), duration: Math.round(hours * 3600), manual: true });
+  state.sessions.push({ id: uid(), taskId, bucketId: task.bucketId, sbId: task.sbId, start: Date.now(), duration: Math.round(hours * 3600), manual: true, dailyTarget: getTodayTarget() });
   save(); closeModal('manual-modal'); renderTracker();
 }
 
@@ -3193,8 +3234,12 @@ function renderReviewDay() {
   const daySess = state.sessions.filter(s => new Date(s.start).toDateString() === d.toDateString());
   const totalH = daySess.reduce((sum,s) => sum + s.duration/3600, 0);
   const limit = state.settings.hourLimit || 8;
-  const score = Math.min(100, Math.round(totalH / limit * 100));
-  const dayIdx = d.getDay() === 0 ? 6 : d.getDay() - 1; // 0=Mon..6=Sun
+  // Use locked dailyTarget from sessions if available, else fall back to current limit
+  const lockedTarget = daySess.length > 0 && daySess[0].dailyTarget
+    ? daySess[0].dailyTarget
+    : (isToday ? getTodayTarget() : limit);
+  const score = Math.min(100, Math.round(totalH / lockedTarget * 100));
+  const dayIdx = d.getDay() === 0 ? 6 : d.getDay() - 1;
   const active = isActiveDay(dayIdx);
   const scoreColor = !active ? 'var(--accent2)' : score >= 70 ? 'var(--green)' : score >= 30 ? 'var(--amber)' : 'var(--red)';
   const dayKind = dayIdx === 5 ? 'flex' : dayIdx === 6 ? 'rest' : null;
@@ -3210,7 +3255,7 @@ function renderReviewDay() {
       <div style="height:8px;background:var(--bg4);border-radius:99px;overflow:hidden;">
         <div style="width:${score}%;height:100%;background:${scoreColor};border-radius:99px;transition:width 0.4s;${!active?'opacity:0.6;':''}"></div>
       </div>
-      <div style="font-size:11px;color:var(--text3);margin-top:6px;">${active ? `${totalH.toFixed(1)}h tracked of ${limit}h target` : `${totalH.toFixed(1)}h tracked — every bit counts as bonus`}${isToday ? ' · still counting' : ''}</div>
+      <div style="font-size:11px;color:var(--text3);margin-top:6px;">${active ? `${totalH.toFixed(1)}h tracked of ${lockedTarget}h target${lockedTarget !== limit ? ' (reduced day)' : ''}` : `${totalH.toFixed(1)}h tracked — every bit counts as bonus`}${isToday ? ' · still counting' : ''}</div>
     </div>`;
 
   // 3 stat cards
@@ -4270,6 +4315,7 @@ async function init() {
   if (!state.buckets.length) seedSample();
   recalcWeights();
   loadTaskCards();
+  checkDayReset(); // auto-reset reduced day if new day
   localStorage.setItem('focusflow_v2', JSON.stringify(state));
 
   // Show landing on very first visit, else go straight to app
