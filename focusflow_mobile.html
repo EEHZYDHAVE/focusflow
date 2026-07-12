@@ -523,7 +523,10 @@ body {
   <div id="track-idle">
     <div class="topbar">
       <div><div class="topbar-title">Track</div><div class="topbar-sub">Select a task to begin</div></div>
-      <button class="btn btn-sm btn-ghost" onclick="openManualLogSheet()">+ Manual</button>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-sm btn-ghost" onclick="openMobileTodayTask()" title="Create a one-off task for today">+ Today task</button>
+        <button class="btn btn-sm btn-ghost" onclick="openManualLogSheet()">+ Manual</button>
+      </div>
     </div>
     <div class="screen-inner" id="track-task-list"></div>
   </div>
@@ -634,7 +637,11 @@ body {
         <input class="form-input" type="number" id="sl-mins" min="0" max="59" value="0">
       </div>
     </div>
-    <div style="font-size:11px;color:var(--text3);margin-bottom:24px;">Timer stops automatically and plays a sound when limit is reached. Leave at 0 to track freely.</div>
+    <div style="font-size:11px;color:var(--text3);margin-bottom:16px;">Timer stops automatically and plays a sound when limit is reached. Leave at 0 to track freely.</div>
+
+    <!-- Session note — Option D -->
+    <div style="font-size:11px;font-weight:700;letter-spacing:0.6px;text-transform:uppercase;color:var(--text3);margin-bottom:8px;">What are you actually working on? <span style="font-weight:400;text-transform:none;letter-spacing:0;">(optional)</span></div>
+    <input class="form-input" type="text" id="sl-session-note" placeholder="e.g. Proposal for ABC, not usual task…" style="margin-bottom:20px;">
 
     <div style="display:flex;gap:10px;">
       <button class="btn btn-ghost" style="flex:1;" onclick="closeSheet('start-sheet')">Cancel</button>
@@ -665,6 +672,10 @@ body {
           <option value="completed">Completed</option>
         </select>
       </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">What did you actually work on? <span style="color:var(--text3);font-weight:400;">(optional note)</span></label>
+      <input class="form-input" type="text" id="ml-note" placeholder="e.g. Revised scope doc…">
     </div>
     <div style="display:flex;gap:10px;margin-top:4px;">
       <button class="btn btn-ghost btn-full" onclick="closeSheet('manual-sheet')">Cancel</button>
@@ -836,9 +847,38 @@ body {
         </div>
       </div>
     </div>
+    <div class="form-group">
+      <label class="form-label">Note <span style="color:var(--text3);font-weight:400;">(what you actually worked on)</span></label>
+      <input class="form-input" id="edit-sess-note" placeholder="Optional…">
+    </div>
     <div style="display:flex;gap:10px;margin-top:4px;">
       <button class="btn btn-ghost btn-full" onclick="closeSheet('edit-session-sheet')">Cancel</button>
       <button class="btn btn-primary btn-full" onclick="saveEditSession()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Today-only Task Sheet (Option C) -->
+<div class="modal-overlay" id="today-task-sheet">
+  <div class="modal-sheet">
+    <div class="sheet-handle"></div>
+    <div class="sheet-title">Today-only task</div>
+    <div style="font-size:13px;color:var(--text2);margin-bottom:16px;">A one-off task just for today. Won't affect your bucket structure permanently.</div>
+    <div class="form-group">
+      <label class="form-label">Task name</label>
+      <input class="form-input" id="tt-mob-name" placeholder="e.g. Proposal for ABC client">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Assign to bucket</label>
+      <select class="form-input" id="tt-mob-bucket"></select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Planned hours</label>
+      <input class="form-input" type="number" id="tt-mob-hours" min="0.25" step="0.25" value="1">
+    </div>
+    <div style="display:flex;gap:10px;margin-top:4px;">
+      <button class="btn btn-ghost btn-full" onclick="closeSheet('today-task-sheet')">Cancel</button>
+      <button class="btn btn-primary btn-full" onclick="saveMobileTodayTask()">Create & track</button>
     </div>
   </div>
 </div>
@@ -901,6 +941,7 @@ function loadLocal() {
   if (!state.buckets)       state.buckets = [];
   if (!state.sessions)      state.sessions = [];
   if (!state.weekSummaries) state.weekSummaries = [];
+  if (!state.todayTasks)    state.todayTasks = [];
   if (!state.settings)      state.settings = { apiKey:'', theme:'dark', hourLimit:8 };
 }
 
@@ -1110,17 +1151,6 @@ function weekStartFor(date) {
 function getActiveDays() { return state.settings.activeDays || [0,1,2,3,4]; }
 function isActiveDay(i)  { return getActiveDays().includes(i); }
 function activeTarget()  { return (state.settings.hourLimit||8) * getActiveDays().length; }
-function allTasks() {
-  return state.buckets.flatMap(b =>
-    (b.subBuckets||[]).flatMap(sb =>
-      (sb.tasks||[]).map(t => ({
-        ...t,
-        bucketId: b.id, bucketName: b.name, bucketColor: b.color,
-        sbId: sb.id, sbName: sb.name,
-      }))
-    )
-  );
-}
 function todayH() {
   const today = new Date().toDateString();
   return state.sessions.filter(s => new Date(s.start).toDateString() === today)
@@ -1423,16 +1453,16 @@ async function confirmStart(withLimit) {
   closeSheet('start-sheet');
   if (!_pendingTask) return;
   const { taskId, bucketId, sbId } = _pendingTask;
+  const note = document.getElementById('sl-session-note')?.value.trim() || '';
   const limitSecs = withLimit
     ? (parseInt(document.getElementById('sl-hours').value)||0)*3600 + (parseInt(document.getElementById('sl-mins').value)||0)*60
     : 0;
-  // Break check
   if (_lastEnd && (Date.now() - _lastEnd) < 5*60*1000) {
     soundBreak();
     notifBreak();
     showToast('☕ Back-to-back sessions. Consider a short break.', 'var(--accent2)', 7000);
   }
-  state.activeSession = { taskId, bucketId, sbId, startTime: Date.now(), limitSecs, pausedElapsed: 0, isPaused: false };
+  state.activeSession = { taskId, bucketId, sbId, startTime: Date.now(), limitSecs, pausedElapsed: 0, isPaused: false, note };
   resetWarn();
   save();
   soundStart();
@@ -1525,7 +1555,7 @@ function stopSession(fromLimit = false) {
   clearInterval(timerInterval); timerInterval = null;
   const duration = getMobileElapsed(); // only non-paused time
   const taskId = state.activeSession.taskId;
-  state.sessions.push({ id:uid(), taskId, bucketId:state.activeSession.bucketId, sbId:state.activeSession.sbId, start:state.activeSession.startTime, duration, dailyTarget: getMobileTarget() });
+  state.sessions.push({ id:uid(), taskId, bucketId:state.activeSession.bucketId, sbId:state.activeSession.sbId, start:state.activeSession.startTime, duration, dailyTarget: getMobileTarget(), note: state.activeSession.note || '' });
   _lastEnd = Date.now();
   state.activeSession = null;
   save();
@@ -1672,9 +1702,56 @@ function renderToday() {
   }
 }
 
-// ============================================================
-// TRACK SCREEN
-// ============================================================
+// ============ TODAY-ONLY TASKS (Option C) ============
+function allTasks() {
+  const tasks = state.buckets.flatMap(b =>
+    (b.subBuckets||[]).flatMap(sb =>
+      (sb.tasks||[]).map(t => ({
+        ...t,
+        bucketId: b.id, bucketName: b.name, bucketColor: b.color,
+        sbId: sb.id, sbName: sb.name,
+      }))
+    )
+  );
+  // Include today-only tasks from this week
+  const ws = weekStart();
+  (state.todayTasks||[]).filter(t => new Date(t.date) >= ws).forEach(t => tasks.push(t));
+  return tasks;
+}
+
+function openMobileTodayTask() {
+  const sel = document.getElementById('tt-mob-bucket');
+  if (sel) sel.innerHTML = state.buckets.map(b=>`<option value="${b.id}">${b.name}</option>`).join('');
+  const nameEl = document.getElementById('tt-mob-name');
+  const hoursEl = document.getElementById('tt-mob-hours');
+  if (nameEl) nameEl.value = '';
+  if (hoursEl) hoursEl.value = '1';
+  openSheet('today-task-sheet');
+}
+
+function saveMobileTodayTask() {
+  const name = document.getElementById('tt-mob-name')?.value.trim();
+  const bucketId = document.getElementById('tt-mob-bucket')?.value;
+  const hours = parseFloat(document.getElementById('tt-mob-hours')?.value) || 1;
+  if (!name) { showToast('Enter a task name', 'var(--red)'); return; }
+  const bucket = state.buckets.find(b => b.id === bucketId);
+  if (!state.todayTasks) state.todayTasks = [];
+  const newTask = {
+    id: uid(), name, bucketId,
+    bucketName: bucket?.name || '',
+    bucketColor: bucket?.color || '#6c63ff',
+    sbId: bucket?.subBuckets?.[0]?.id || '',
+    sbName: bucket?.subBuckets?.[0]?.name || 'Today',
+    hours, priority: 'normal', todayOnly: true,
+    date: new Date().toDateString()
+  };
+  state.todayTasks.push(newTask);
+  save();
+  closeSheet('today-task-sheet');
+  showToast(`"${name}" created ✓`, 'var(--green)');
+  // Immediately open tracking for this task
+  startSession(newTask.id, bucketId, newTask.sbId);
+}
 function renderTrack() {
   if (state.activeSession) {
     document.getElementById('track-idle').style.display = 'none';
@@ -1714,7 +1791,7 @@ function renderTrackTaskList() {
           return `<div class="task-item">
             <div class="task-dot" style="background:${PRIORITY_COLOR[t.priority]};"></div>
             <div class="task-info">
-              <div class="task-name" style="${done?'text-decoration:line-through;color:var(--text3);':''}">${t.name}</div>
+              <div class="task-name" style="${done?'text-decoration:line-through;color:var(--text3);':''}">${t.name}${t.todayOnly?` <span style="background:rgba(245,158,11,0.15);color:var(--amber);border:1px solid rgba(245,158,11,0.3);border-radius:99px;padding:1px 6px;font-size:9px;font-weight:700;">TODAY</span>`:''}</div>
               <div class="task-meta">${t.sbName} · ${fmtH(tracked)} today / ${fmtH(t.hours)}</div>
               <div class="prog-track" style="height:3px;margin-top:5px;">
                 <div class="prog-fill" style="width:${pct.toFixed(0)}%;background:${done?'var(--green)':t.bucketColor};"></div>
@@ -1742,9 +1819,10 @@ function openManualLogSheet() {
 function saveManualLog() {
   const taskId = document.getElementById('ml-task').value;
   const hours = parseFloat(document.getElementById('ml-hours').value)||0;
+  const note = document.getElementById('ml-note')?.value.trim() || '';
   if (!taskId || hours <= 0) { showToast('Fill in all fields'); return; }
   const task = allTasks().find(t=>t.id===taskId);
-  state.sessions.push({ id:uid(), taskId, bucketId:task?.bucketId, sbId:task?.sbId, start:Date.now()-hours*3600*1000, duration:hours*3600, manual:true, dailyTarget: getMobileTarget() });
+  state.sessions.push({ id:uid(), taskId, bucketId:task?.bucketId, sbId:task?.sbId, start:Date.now()-hours*3600*1000, duration:hours*3600, manual:true, dailyTarget: getMobileTarget(), note });
   save();
   closeSheet('manual-sheet');
   renderTrack();
@@ -1840,7 +1918,8 @@ function renderReviewDay(limit) {
     return `<div class="task-item" style="align-items:flex-start;padding:10px 0;">
       <div class="task-dot" style="background:${t?.bucketColor||'var(--text3)'};margin-top:4px;"></div>
       <div class="task-info">
-        <div class="task-name">${t?.name||'Unknown'}</div>
+        <div class="task-name">${t?.name||'Unknown'}${t?.todayOnly?` <span style="background:rgba(245,158,11,0.15);color:var(--amber);border:1px solid rgba(245,158,11,0.3);border-radius:99px;padding:1px 6px;font-size:9px;font-weight:700;">TODAY</span>`:''}</div>
+        ${s.note ? `<div style="font-size:11px;color:var(--accent2);font-style:italic;margin-top:2px;">↳ ${s.note}</div>` : ''}
         <div class="task-meta">${time}${s.manual?' · manual':''}</div>
       </div>
       <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
@@ -2016,6 +2095,8 @@ function openEditSession(sessionId) {
     `<strong>${task?.name || 'Unknown'}</strong> · ${time}${s.manual ? ' · manual' : ''}`;
   document.getElementById('edit-sess-hours').value = Math.floor(totalMins / 60);
   document.getElementById('edit-sess-mins').value = totalMins % 60;
+  const noteEl = document.getElementById('edit-sess-note');
+  if (noteEl) noteEl.value = s.note || '';
   openSheet('edit-session-sheet');
 }
 
@@ -2023,14 +2104,14 @@ function saveEditSession() {
   const id = document.getElementById('edit-session-id').value;
   const h  = parseInt(document.getElementById('edit-sess-hours').value) || 0;
   const m  = parseInt(document.getElementById('edit-sess-mins').value)  || 0;
+  const note = document.getElementById('edit-sess-note')?.value.trim() || '';
   const newDuration = h * 3600 + m * 60;
   if (newDuration <= 0) { showToast('Duration must be greater than 0', 'var(--red)'); return; }
   const s = state.sessions.find(x => x.id === id);
-  if (s) { s.duration = newDuration; s.manual = true; }
+  if (s) { s.duration = newDuration; s.manual = true; s.note = note; }
   save();
   closeSheet('edit-session-sheet');
   showToast('Session updated ✓', 'var(--green)');
-  // Refresh everywhere that shows completion state
   renderReview();
   renderTrackTaskList();
   renderToday();
@@ -2112,6 +2193,7 @@ function archiveWeek() {
   });
 
   state.sessions = state.sessions.filter(s => new Date(s.start) >= ws);
+  if (state.todayTasks) state.todayTasks = state.todayTasks.filter(t => new Date(t.date) >= ws);
   save(); renderReview();
   showToast(`${weekKeys.length} week${weekKeys.length>1?'s':''} archived ✓`, 'var(--green)');
 }

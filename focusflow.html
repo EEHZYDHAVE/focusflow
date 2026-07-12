@@ -659,9 +659,16 @@ nav { padding: 16px 12px; flex: 1; }
         <input class="form-input" type="number" id="limit-mins" min="0" max="59" value="0">
       </div>
     </div>
-    <div style="font-size:11px;color:var(--text3);margin-bottom:20px;">When the timer hits your limit it stops automatically and plays a sound. Leave at 0 to track without a limit.</div>
+    <div style="font-size:11px;color:var(--text3);margin-bottom:16px;">When the timer hits your limit it stops automatically and plays a sound. Leave at 0 to track without a limit.</div>
+
+    <!-- Session note — Option D -->
+    <div class="form-group" style="margin-bottom:20px;">
+      <label class="form-label">What are you actually working on? <span style="color:var(--text3);font-weight:400;">(optional — shows in Review)</span></label>
+      <input class="form-input" type="text" id="tl-session-note" placeholder="e.g. Proposal for ABC client, not usual leads work…">
+    </div>
 
     <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="cancelTimerModal()">Cancel</button>
       <button class="btn btn-ghost" onclick="startTrackingNoLimit()">No limit</button>
       <button class="btn btn-primary" onclick="confirmTimerLimit()">Start →</button>
     </div>
@@ -677,7 +684,7 @@ nav { padding: 16px 12px; flex: 1; }
     </div>
     <input type="hidden" id="desk-edit-session-id">
     <div id="desk-edit-session-info" style="font-size:13px;color:var(--text2);margin-bottom:16px;padding:10px 12px;background:var(--bg3);border-radius:var(--radius-sm);"></div>
-    <div class="form-row" style="margin-bottom:18px;">
+    <div class="form-row" style="margin-bottom:14px;">
       <div class="form-group" style="margin-bottom:0;">
         <label class="form-label">Hours</label>
         <input class="form-input" type="number" id="desk-edit-sess-hours" min="0" max="24" value="0">
@@ -687,9 +694,42 @@ nav { padding: 16px 12px; flex: 1; }
         <input class="form-input" type="number" id="desk-edit-sess-mins" min="0" max="59" value="0">
       </div>
     </div>
+    <div class="form-group" style="margin-bottom:18px;">
+      <label class="form-label">Note <span style="color:var(--text3);font-weight:400;">(what you actually worked on)</span></label>
+      <input class="form-input" type="text" id="desk-edit-sess-note" placeholder="Optional…">
+    </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('edit-session-modal')">Cancel</button>
       <button class="btn btn-primary" onclick="deskSaveEditSession()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- TODAY-ONLY TASK MODAL (Option C) -->
+<div class="modal-overlay" id="today-task-modal" onclick="if(event.target===this)closeModal('today-task-modal')">
+  <div class="modal" style="width:420px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+      <div class="modal-title" style="margin-bottom:0;">Today-only task</div>
+      <button onclick="closeModal('today-task-modal')" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px;">✕</button>
+    </div>
+    <div style="font-size:12px;color:var(--text3);margin-bottom:18px;">Create a one-off task just for today. It won't appear in your buckets permanently — it's cleared when you archive the week.</div>
+    <div class="form-group">
+      <label class="form-label">Task name</label>
+      <input class="form-input" type="text" id="tt-name" placeholder="e.g. Proposal for ABC client">
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Assign to bucket</label>
+        <select class="form-input" id="tt-bucket"></select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Planned hours</label>
+        <input class="form-input" type="number" id="tt-hours" min="0.25" step="0.25" value="1">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('today-task-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveTodayTask()">Create & track</button>
     </div>
   </div>
 </div>
@@ -865,6 +905,10 @@ nav { padding: 16px 12px; flex: 1; }
         <button class="btn btn-ghost btn-sm" id="sort-toggle-btn" onclick="toggleTrackerSort()">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="6" y1="12" x2="18" y2="12"/><line x1="9" y1="18" x2="15" y2="18"/></svg>
           Priority order
+        </button>
+        <button class="btn btn-ghost btn-sm" onclick="openTodayTaskModal()" title="Create a one-off task just for today">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Today task
         </button>
         <button class="btn btn-ghost btn-sm" id="pip-redock-btn" onclick="redockPiP()" style="display:none;" title="Re-open floating timer window">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
@@ -1376,9 +1420,12 @@ nav { padding: 16px 12px; flex: 1; }
 </div>
 
 <!-- MANUAL LOG MODAL -->
-<div class="modal-overlay" id="manual-modal">
+<div class="modal-overlay" id="manual-modal" onclick="if(event.target===this)closeModal('manual-modal')">
   <div class="modal">
-    <div class="modal-title">Log time manually</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+      <div class="modal-title" style="margin-bottom:0;">Log time manually</div>
+      <button onclick="closeModal('manual-modal')" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px;">✕</button>
+    </div>
     <div class="form-group">
       <label class="form-label">Select task</label>
       <select class="form-input" id="manual-task-select"></select>
@@ -1395,6 +1442,10 @@ nav { padding: 16px 12px; flex: 1; }
           <option value="partial">Partial</option>
         </select>
       </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">What did you actually work on? <span style="color:var(--text3);font-weight:400;">(optional note)</span></label>
+      <input class="form-input" type="text" id="manual-note" placeholder="e.g. Revised scope doc, not usual task…">
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('manual-modal')">Cancel</button>
@@ -1432,6 +1483,7 @@ function load() {
   if (!state.sessions) state.sessions = [];
   if (!state.settings) state.settings = { apiKey:'', theme:'dark', hourLimit:8 };
   if (!state.today) state.today = { availableHours: 8 };
+  if (!state.todayTasks) state.todayTasks = [];
 }
 
 // ============================================================
@@ -1793,6 +1845,9 @@ function tasksForMode() {
 function allTasks() {
   const tasks = [];
   state.buckets.forEach(b => (b.subBuckets || []).forEach(sb => (sb.tasks || []).forEach(t => tasks.push({ ...t, bucketId: b.id, bucketName: b.name, bucketColor: b.color, sbId: sb.id, sbName: sb.name }))));
+  // Include today-only tasks (from this week)
+  const ws = weekStart();
+  (state.todayTasks || []).filter(t => new Date(t.date) >= ws).forEach(t => tasks.push(t));
   return tasks;
 }
 function todaySessions() {
@@ -2525,6 +2580,7 @@ function taskRowHTML(t) {
       <div style="display:flex;align-items:center;gap:6px;">
         <div class="task-name" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${t.name}</div>
         <span class="badge ${t.priority==='important'?'badge-important':t.priority==='urgent'?'badge-urgent':'badge-normal'}" style="font-size:10px;flex-shrink:0;">${t.priority==='important'?'★':'○'}</span>
+        ${t.todayOnly ? `<span style="background:rgba(245,158,11,0.15);color:var(--amber);border:1px solid rgba(245,158,11,0.3);border-radius:99px;padding:1px 7px;font-size:9px;font-weight:700;flex-shrink:0;">TODAY</span>` : ''}
       </div>
       <div style="font-size:11px;color:var(--text3);">${t.bucketName} › ${t.sbName}</div>
       <div style="margin-top:5px;"><div class="progress-bar" style="height:3px;"><div class="progress-fill" style="width:${pct}%;background:${t.bucketColor};"></div></div></div>
@@ -2619,6 +2675,8 @@ function cancelTimerModal() {
 }
 
 function startTrackingNoLimit() {
+  const note = document.getElementById('tl-session-note')?.value.trim() || '';
+  if (pendingTrackTask) pendingTrackTask.note = note;
   closeModal('timer-limit-modal');
   _beginTracking(0);
 }
@@ -2626,15 +2684,17 @@ function startTrackingNoLimit() {
 function confirmTimerLimit() {
   const h = parseInt(document.getElementById('limit-hours').value) || 0;
   const m = parseInt(document.getElementById('limit-mins').value) || 0;
+  const note = document.getElementById('tl-session-note')?.value.trim() || '';
+  if (pendingTrackTask) pendingTrackTask.note = note;
   closeModal('timer-limit-modal');
   _beginTracking(h * 3600 + m * 60);
 }
 
 function _beginTracking(limitSeconds) {
   if (!pendingTrackTask) return;
-  const { taskId, bucketId, sbId } = pendingTrackTask;
+  const { taskId, bucketId, sbId, note } = pendingTrackTask;
   const task = allTasks().find(t => t.id === taskId);
-  state.activeSession = { taskId, bucketId, sbId, startTime: Date.now(), limitSeconds, pausedElapsed: 0, isPaused: false };
+  state.activeSession = { taskId, bucketId, sbId, startTime: Date.now(), limitSeconds, pausedElapsed: 0, isPaused: false, note: note || '' };
   sessionStart = Date.now();
   save();
   renderActiveSessionDisplay(task, limitSeconds);
@@ -2727,7 +2787,7 @@ function stopTracking(fromLimit = false) {
   clearInterval(timerInterval); timerInterval = null;
   const duration = getElapsed(); // only counts non-paused time
   const taskId = state.activeSession.taskId;
-  state.sessions.push({ id: uid(), taskId, bucketId: state.activeSession.bucketId, sbId: state.activeSession.sbId, start: state.activeSession.startTime, duration, dailyTarget: getTodayTarget() });
+  state.sessions.push({ id: uid(), taskId, bucketId: state.activeSession.bucketId, sbId: state.activeSession.sbId, start: state.activeSession.startTime, duration, dailyTarget: getTodayTarget(), note: state.activeSession.note || '' });
   _lastSessionEndTime = Date.now();
   state.activeSession = null;
   document.getElementById('main-timer').textContent = '00:00:00';
@@ -3192,9 +3252,10 @@ function openManualLog() {
 function saveManualLog() {
   const taskId = document.getElementById('manual-task-select').value;
   const hours = parseFloat(document.getElementById('manual-hours').value);
+  const note = document.getElementById('manual-note')?.value.trim() || '';
   if (!taskId || !hours) return alert('Select a task and enter hours.');
   const task = allTasks().find(t => t.id === taskId);
-  state.sessions.push({ id: uid(), taskId, bucketId: task.bucketId, sbId: task.sbId, start: Date.now(), duration: Math.round(hours * 3600), manual: true, dailyTarget: getTodayTarget() });
+  state.sessions.push({ id: uid(), taskId, bucketId: task.bucketId, sbId: task.sbId, start: Date.now(), duration: Math.round(hours * 3600), manual: true, dailyTarget: getTodayTarget(), note });
   save(); closeModal('manual-modal'); renderTracker();
 }
 
@@ -3326,7 +3387,8 @@ function renderReviewDay() {
         <div class="bucket-dot" style="background:${t?t.bucketColor:'var(--text3)'};width:7px;height:7px;flex-shrink:0;"></div>
         <div style="flex:1;min-width:0;">
           <div style="font-size:12px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${t?t.name:'Unknown'}</div>
-          <div style="font-size:10px;color:var(--text3);">${time}${s.manual?' · manual':''}</div>
+          ${s.note ? `<div style="font-size:11px;color:var(--accent2);margin-top:1px;font-style:italic;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">↳ ${s.note}</div>` : ''}
+          <div style="font-size:10px;color:var(--text3);margin-top:1px;">${time}${s.manual?' · manual':''}</div>
         </div>
         <div style="font-size:11px;color:var(--text2);font-family:'DM Mono',monospace;font-weight:500;flex-shrink:0;">${durLabel}</div>
         <button onclick="desktopEditSession('${s.id}')" style="background:var(--bg3);border:1px solid var(--border2);border-radius:6px;padding:3px 9px;font-size:11px;color:var(--text2);cursor:pointer;font-family:inherit;flex-shrink:0;">Edit</button>
@@ -3565,6 +3627,7 @@ function desktopEditSession(sessionId) {
     `<strong>${task?.name || 'Unknown'}</strong> &nbsp;·&nbsp; ${time}${s.manual ? ' · manual' : ''}`;
   document.getElementById('desk-edit-sess-hours').value = Math.floor(totalMins / 60);
   document.getElementById('desk-edit-sess-mins').value = totalMins % 60;
+  document.getElementById('desk-edit-sess-note').value = s.note || '';
   openModal('edit-session-modal');
 }
 
@@ -3572,10 +3635,11 @@ function deskSaveEditSession() {
   const id = document.getElementById('desk-edit-session-id').value;
   const h  = parseInt(document.getElementById('desk-edit-sess-hours').value) || 0;
   const m  = parseInt(document.getElementById('desk-edit-sess-mins').value)  || 0;
+  const note = document.getElementById('desk-edit-sess-note').value.trim();
   const newDuration = h * 3600 + m * 60;
   if (newDuration <= 0) { alert('Duration must be greater than 0.'); return; }
   const s = state.sessions.find(x => x.id === id);
-  if (s) { s.duration = newDuration; s.manual = true; }
+  if (s) { s.duration = newDuration; s.manual = true; s.note = note; }
   save();
   closeModal('edit-session-modal');
   showToast('Session updated ✓', 'var(--green)');
@@ -3594,6 +3658,50 @@ function desktopDeleteSession(sessionId) {
   showToast('Session deleted', 'var(--amber)');
   renderReview();
   renderDashboard();
+}
+
+// ============ TODAY-ONLY TASKS (Option C) ============
+// Stored separately from bucket tasks — cleared on week archive
+function getTodayTasks() {
+  if (!state.todayTasks) state.todayTasks = [];
+  const today = new Date().toDateString();
+  return state.todayTasks.filter(t => t.date === today);
+}
+
+function openTodayTaskModal() {
+  const sel = document.getElementById('tt-bucket');
+  sel.innerHTML = state.buckets.map(b => `<option value="${b.id}">${b.name}</option>`).join('');
+  document.getElementById('tt-name').value = '';
+  document.getElementById('tt-hours').value = '1';
+  openModal('today-task-modal');
+}
+
+function saveTodayTask() {
+  const name = document.getElementById('tt-name').value.trim();
+  const bucketId = document.getElementById('tt-bucket').value;
+  const hours = parseFloat(document.getElementById('tt-hours').value) || 1;
+  if (!name) { alert('Enter a task name.'); return; }
+  const bucket = state.buckets.find(b => b.id === bucketId);
+  if (!state.todayTasks) state.todayTasks = [];
+  const newTask = {
+    id: uid(), name, bucketId, bucketName: bucket?.name || '', bucketColor: bucket?.color || '#6c63ff',
+    sbId: bucket?.subBuckets?.[0]?.id || '', sbName: bucket?.subBuckets?.[0]?.name || 'Today',
+    hours, priority: 'normal', todayOnly: true, date: new Date().toDateString()
+  };
+  state.todayTasks.push(newTask);
+  save();
+  closeModal('today-task-modal');
+  renderTracker();
+  // Immediately open tracking for this task
+  startTracking(newTask.id, bucketId, newTask.sbId);
+}
+
+function clearOldTodayTasks() {
+  if (!state.todayTasks) return;
+  const today = new Date().toDateString();
+  // Keep today's + any from this week (for Review Day display)
+  const ws = weekStart();
+  state.todayTasks = state.todayTasks.filter(t => new Date(t.date) >= ws);
 }
 
 function jumpToDay(offset) {
@@ -3745,6 +3853,8 @@ function resetWeek() {
 
   // Remove only sessions that were archived; current week stays live
   state.sessions = state.sessions.filter(s => new Date(s.start) >= ws);
+  // Clear today-only tasks from archived weeks
+  if (state.todayTasks) state.todayTasks = state.todayTasks.filter(t => new Date(t.date) >= ws);
   save(); renderReview();
 }
 
