@@ -1430,6 +1430,10 @@ nav { padding: 16px 12px; flex: 1; }
       <label class="form-label">Select task</label>
       <select class="form-input" id="manual-task-select"></select>
     </div>
+    <div class="form-group">
+      <label class="form-label">Date <span style="color:var(--text3);font-weight:400;">(any day this week)</span></label>
+      <div id="manual-day-pills" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+    </div>
     <div class="form-row">
       <div class="form-group">
         <label class="form-label">Hours spent</label>
@@ -2535,6 +2539,7 @@ function toggleTrackerSort() {
 
 function renderTracker() {
   checkDayReset();
+  clearOldTodayTasks();
   updateTrackerDayBadge();
   let tasks = allTasks();
   if (trackerSortMode === 'priority') {
@@ -2591,6 +2596,7 @@ function taskRowHTML(t) {
       done ?
       `<span style="color:var(--green);font-size:12px;">✓ Done</span>` :
       `<button class="btn btn-green btn-sm" onclick="startTracking('${t.id}','${t.bucketId}','${t.sbId}')">Start</button>`}
+    ${t.todayOnly && !isTracking ? `<button onclick="deleteTodayTask('${t.id}')" style="background:var(--red-bg);border:1px solid rgba(239,68,68,0.2);border-radius:6px;padding:3px 7px;font-size:11px;color:var(--red);cursor:pointer;font-family:inherit;margin-left:2px;" title="Remove this today-only task">✕</button>` : ''}
   </div>`;
 }
 
@@ -3242,21 +3248,65 @@ function deleteSession(sessionId) {
   save(); renderTracker();
 }
 
+let _manualLogDate = null; // stores selected date for manual log
+
 function openManualLog() {
   const tasks = allTasks();
   const sel = document.getElementById('manual-task-select');
   sel.innerHTML = tasks.map(t => `<option value="${t.id}">${t.bucketName} › ${t.name}</option>`).join('');
   document.getElementById('manual-hours').value = '';
+  const noteEl = document.getElementById('manual-note');
+  if (noteEl) noteEl.value = '';
+
+  // Default to today
+  _manualLogDate = new Date(); _manualLogDate.setHours(12,0,0,0);
+  renderManualDayPills();
   openModal('manual-modal');
 }
+
+function renderManualDayPills() {
+  const ws = weekStart();
+  const today = new Date(); today.setHours(0,0,0,0);
+  const DAY_NAMES = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+  const container = document.getElementById('manual-day-pills');
+  if (!container) return;
+
+  // Build pills for each day from Monday to today (inclusive)
+  const pills = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(ws); d.setDate(ws.getDate() + i); d.setHours(0,0,0,0);
+    if (d > today) break; // don't show future days
+    const isToday = d.toDateString() === today.toDateString();
+    const isSelected = _manualLogDate && d.toDateString() === new Date(_manualLogDate).toDateString();
+    const label = isToday ? 'Today' : DAY_NAMES[i];
+    pills.push(`<div onclick="selectManualDay(${d.getTime()})"
+      style="padding:6px 14px;border-radius:99px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid ${isSelected ? 'var(--accent)' : 'var(--border2)'};background:${isSelected ? 'var(--accent)' : 'var(--bg3)'};color:${isSelected ? 'white' : 'var(--text2)'};transition:all 0.15s;user-select:none;">
+      ${label}
+    </div>`);
+  }
+  container.innerHTML = pills.join('');
+}
+
+function selectManualDay(timestamp) {
+  _manualLogDate = new Date(timestamp); _manualLogDate.setHours(12,0,0,0);
+  renderManualDayPills();
+}
+
 function saveManualLog() {
   const taskId = document.getElementById('manual-task-select').value;
   const hours = parseFloat(document.getElementById('manual-hours').value);
   const note = document.getElementById('manual-note')?.value.trim() || '';
   if (!taskId || !hours) return alert('Select a task and enter hours.');
   const task = allTasks().find(t => t.id === taskId);
-  state.sessions.push({ id: uid(), taskId, bucketId: task.bucketId, sbId: task.sbId, start: Date.now(), duration: Math.round(hours * 3600), manual: true, dailyTarget: getTodayTarget(), note });
+  const sessionDate = _manualLogDate || new Date();
+  // Use noon of the selected day so it lands clearly in that date's bucket
+  const startTs = new Date(sessionDate).setHours(12,0,0,0);
+  // dailyTarget — use stored reduced day if the selected date is today, else fall back to hourLimit
+  const isToday = new Date(startTs).toDateString() === new Date().toDateString();
+  const dailyTarget = isToday ? getTodayTarget() : (state.settings.hourLimit || 8);
+  state.sessions.push({ id: uid(), taskId, bucketId: task.bucketId, sbId: task.sbId, start: startTs, duration: Math.round(hours * 3600), manual: true, dailyTarget, note });
   save(); closeModal('manual-modal'); renderTracker();
+  showToast(`Logged ${hours}h for ${new Date(startTs).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})}`, 'var(--green)');
 }
 
 // ============ REVIEW ============
@@ -3698,10 +3748,18 @@ function saveTodayTask() {
 
 function clearOldTodayTasks() {
   if (!state.todayTasks) return;
-  const today = new Date().toDateString();
-  // Keep today's + any from this week (for Review Day display)
   const ws = weekStart();
   state.todayTasks = state.todayTasks.filter(t => new Date(t.date) >= ws);
+}
+
+function deleteTodayTask(taskId) {
+  const task = (state.todayTasks||[]).find(t => t.id === taskId);
+  if (!task) return;
+  if (!confirm(`Remove "${task.name}"?\n\nSessions tracked for this task will remain in your data but the task will be removed from the tracker.`)) return;
+  state.todayTasks = (state.todayTasks||[]).filter(t => t.id !== taskId);
+  save();
+  renderTracker();
+  showToast(`"${task.name}" removed`, 'var(--amber)');
 }
 
 function jumpToDay(offset) {
